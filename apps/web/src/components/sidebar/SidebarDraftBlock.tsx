@@ -33,6 +33,7 @@ import {
   JUMP_HINT_SLOT_CLASS_NAME,
   JumpHintBadge,
 } from "./SidebarThreadRow";
+import { sidebarSectionRowId, type indexSidebarSections } from "./sidebarSections";
 
 const EMPTY_COMPOSER_PARTS = {
   prompt: "",
@@ -73,6 +74,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   projectDisplayName: string | null;
   isActive: boolean;
   jumpLabel: string | null;
+  navigationParent?: string | undefined;
   onNavigate: (draftId: DraftId) => void;
   onDiscard: (draftId: DraftId) => void;
   onContextMenu: (
@@ -144,6 +146,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         role="button"
         tabIndex={0}
         data-sidebar-row={`draft:${draftId}`}
+        data-sidebar-parent={props.navigationParent}
         aria-label={accessibility.label}
         aria-current={accessibility.current}
         data-testid="sidebar-draft-row"
@@ -259,6 +262,8 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectByKey: ReadonlyMap<string, EnvironmentProject>;
   projectDisplayNameByKey: ReadonlyMap<string, string>;
   routeDraftId: string | null;
+  sectionId?: string;
+  sectionIndex?: ReturnType<typeof indexSidebarSections>;
   onNavigateToDraft: (draftId: DraftId) => void;
   onDraftContextMenu: (
     draftId: DraftId,
@@ -276,11 +281,16 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   );
   const drafts = props.draftIds.flatMap((draftId) => {
     const session = draftThreadsByThreadKey[draftId];
+    if (!session) return [];
+    const sectionId =
+      props.sectionIndex?.forThread(session.environmentId, session.threadId, session.projectId) ??
+      null;
+    if (sectionId !== (props.sectionId ?? null)) return [];
     const composer =
       (draftId === props.routeDraftId ? props.routeDraftComposer : null) ??
       draftsByThreadKey[draftId] ??
       null;
-    return session ? [{ draftId, session, composer }] : [];
+    return [{ draftId, session, composer }];
   });
   if (drafts.length === 0) {
     return null;
@@ -299,6 +309,9 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
             projectDisplayName={props.projectDisplayNameByKey.get(projectKey) ?? null}
             isActive={draftId === props.routeDraftId}
             jumpLabel={props.jumpLabelByDraftId?.get(draftId) ?? null}
+            navigationParent={
+              props.sectionId === undefined ? undefined : sidebarSectionRowId(props.sectionId)
+            }
             onNavigate={props.onNavigateToDraft}
             onDiscard={discardComposerDraft}
             onContextMenu={props.onDraftContextMenu}

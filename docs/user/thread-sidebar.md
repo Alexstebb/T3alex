@@ -163,6 +163,20 @@ Pinned threads stay above the folders, and Snoozed and Settled stay below them. 
 can drag a thread onto the composer to mention it, but not within the sidebar, and the Working
 section is off. Each device keeps its own choice.
 
+### Group threads into custom sections
+
+On web and desktop, choose **New section** beside the thread search. Drag a thread onto the
+section's name or into its list, or use **Move to section** in the thread's menu.
+You can move several selected threads at once, including threads from different
+projects. Click the section name to collapse it. Use its menu to rename, reorder, or remove it.
+Removing a section returns its threads to their usual places. Sections are saved in your browser
+or desktop profile.
+
+Choose **Link folder** from a section's menu to use an existing folder as its project. The
+project's chats appear in the section unless you move them elsewhere. Click the **+** beside
+the section name to start a chat there, or choose the section in the new-thread picker. Chats
+started in a linked section use the linked folder as their project.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

@@ -442,6 +442,8 @@ import {
   ScheduledTaskError,
   ScheduledTaskListInput,
   ScheduledTaskListResult,
+  ScheduledTaskRunsInput,
+  ScheduledTaskRunsResult,
   ScheduledTaskRunNowInput,
   ScheduledTaskRotateWebhookTokenInput,
   ScheduledTaskListWebhookDeliveriesInput,
@@ -644,6 +646,7 @@ export const WS_METHODS = {
   workflowsDeleteDefinition: "workflows.deleteDefinition",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
+  scheduledTasksSubscribeRuns: "scheduledTasks.subscribeRuns",
   scheduledTasksUpsert: "scheduledTasks.upsert",
   scheduledTasksSetEnabled: "scheduledTasks.setEnabled",
   scheduledTasksDelete: "scheduledTasks.delete",
@@ -2372,6 +2375,13 @@ const WsScheduledTasksSubscribeRpc = Rpc.make(WS_METHODS.scheduledTasksSubscribe
   stream: true,
 });
 
+const WsScheduledTasksSubscribeRunsRpc = Rpc.make(WS_METHODS.scheduledTasksSubscribeRuns, {
+  payload: ScheduledTaskRunsInput,
+  success: ScheduledTaskRunsResult,
+  error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 const WsScheduledTasksUpsertRpc = Rpc.make(WS_METHODS.scheduledTasksUpsert, {
   payload: ScheduledTaskUpsertInput,
   success: ScheduledTaskMutationResult,
@@ -2550,6 +2560,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkflowsSaveDefinitionRpc,
   WsWorkflowsDeleteDefinitionRpc,
   WsScheduledTasksSubscribeRpc,
+  WsScheduledTasksSubscribeRunsRpc,
   WsScheduledTasksUpsertRpc,
   WsScheduledTasksSetEnabledRpc,
   WsScheduledTasksDeleteRpc,

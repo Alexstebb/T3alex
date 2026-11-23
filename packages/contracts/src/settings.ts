@@ -413,6 +413,19 @@ export const VoiceTranscriptionDestination = Schema.Union([
 ]);
 export type VoiceTranscriptionDestination = typeof VoiceTranscriptionDestination.Type;
 
+// Local fork: user-made sidebar sections. Kept in client settings (not browser
+// storage) so they survive a reset of the Electron profile.
+export const SidebarCustomSection = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  collapsed: Schema.Boolean,
+  threadKeys: Schema.Array(Schema.String),
+  projectKey: Schema.optionalKey(Schema.String),
+  excludedThreadKeys: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+export type SidebarCustomSection = typeof SidebarCustomSection.Type;
+export const SidebarCustomSections = Schema.Array(SidebarCustomSection);
+
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
@@ -617,6 +630,7 @@ export const ClientSettingsSchema = Schema.Struct({
   // Opt-in TeX typesetting in rendered Markdown. Off keeps math parsing and
   // KaTeX out of the render path entirely.
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sidebarCustomSections: SidebarCustomSections.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -2184,5 +2198,6 @@ export const ClientSettingsPatch = Schema.Struct({
   snapShotAnimations: Schema.optionalKey(Schema.Boolean),
   wordWrap: Schema.optionalKey(Schema.Boolean),
   mathRenderingEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarCustomSections: Schema.optionalKey(SidebarCustomSections),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

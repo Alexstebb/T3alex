@@ -1,4 +1,5 @@
 import { threadKey } from "@t3tools/client-runtime/state/entities";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -11,13 +12,16 @@ import { removeLocalStorageItem } from "../hooks/useLocalStorage";
 import { makeThreadFixture } from "../test-fixtures";
 import type { Project, Thread } from "../types";
 import { CommandPalette } from "./CommandPalette";
+import type { DraftId } from "../composerDraftStore";
 
 const entities = vi.hoisted(() => ({
   projects: [] as ReadonlyArray<Project>,
   threads: [] as ReadonlyArray<Thread>,
   activeThread: undefined as Thread | undefined,
   delegatedUnderParent: new Set<string>() as ReadonlySet<string>,
-  handleNewThread: vi.fn(async () => undefined),
+  handleNewThread: vi.fn(
+    async (): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => null,
+  ),
 }));
 vi.mock("../state/server", async (original) => {
   const actual = await original<typeof import("../state/server")>();
@@ -49,6 +53,10 @@ vi.mock("../state/entities", async (original) => ({
   useProjects: () => entities.projects,
   useVisibleThreadShells: () => entities.threads,
   useDelegatedUnderParent: () => entities.delegatedUnderParent,
+  readProject: (ref: { environmentId: EnvironmentId; projectId: ProjectId }) =>
+    entities.projects.find(
+      (project) => project.environmentId === ref.environmentId && project.id === ref.projectId,
+    ) ?? null,
 }));
 
 function setup(state: Partial<typeof entities> = {}) {
@@ -137,6 +145,34 @@ describe("CommandPalette open intents", () => {
     openCommandPalette({ open: "new-thread-in" });
 
     await expect.element(page.getByPlaceholder("Search...")).toHaveFocus();
+  });
+
+  it("offers sections as destinations alongside projects", async () => {
+    const project = makeProject("customer-workspace");
+    setup({ projects: [project] });
+    const key = "t3code:sidebar:custom-sections";
+    using cleanup = new DisposableStack();
+    cleanup.defer(() => localStorage.removeItem(key));
+    const ref = scopeProjectRef(project.environmentId, project.id);
+    localStorage.setItem(
+      key,
+      JSON.stringify([
+        {
+          id: "clients",
+          name: "Support",
+          collapsed: false,
+          threadKeys: [],
+          projectKey: scopedProjectKey(ref),
+        },
+      ]),
+    );
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    openCommandPalette({ open: "new-thread-in" });
+    const section = page.getByRole("option", { name: /Support/ });
+    await expect.element(section).toBeVisible();
+    await expect.element(page.getByRole("option", { name: /customer-workspace/ })).toBeVisible();
+    await userEvent.click(section);
+    await vi.waitFor(() => expect(entities.handleNewThread).toHaveBeenCalledExactlyOnceWith(ref));
   });
 
   it("highlights the first project when New thread in... opens from the root list", async () => {

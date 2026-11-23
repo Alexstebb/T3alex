@@ -4,7 +4,9 @@ import {
   CommandId,
   ForwardCompatibleArray,
   IsoDateTime,
+  MessageId,
   ProjectId,
+  RunId,
   ScheduledTaskId,
   SecretRef,
   ThreadId,
@@ -14,6 +16,7 @@ import { ModelSelection } from "./modelSelection.ts";
 import {
   OrchestrationV2Actor,
   OrchestrationV2CreationSource,
+  OrchestrationV2RunStatus,
   OrchestrationV2ThreadLaunchWorkspaceStrategy,
 } from "./orchestrationV2.ts";
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
@@ -266,6 +269,20 @@ export const ScheduledTask = Schema.Struct({
 });
 export type ScheduledTask = typeof ScheduledTask.Type;
 
+/** A successful one-time task is retained, but cannot be run again until rescheduled. */
+export function isCompletedOneTimeScheduledTask(
+  task: Pick<ScheduledTask, "enabled" | "schedule" | "lastRunAt" | "lastRunStatus" | "nextRunAt">,
+): boolean {
+  return (
+    !task.enabled &&
+    task.schedule.type === "once" &&
+    task.lastRunStatus === "succeeded" &&
+    task.nextRunAt === null &&
+    task.lastRunAt !== null &&
+    Date.parse(task.lastRunAt) >= Date.parse(task.schedule.runAt)
+  );
+}
+
 export const ScheduledTaskListInput = Schema.Struct({});
 export type ScheduledTaskListInput = typeof ScheduledTaskListInput.Type;
 
@@ -275,6 +292,26 @@ export const ScheduledTaskListResult = Schema.Struct({
   timeZone: Schema.optional(TrimmedNonEmptyString),
 });
 export type ScheduledTaskListResult = typeof ScheduledTaskListResult.Type;
+
+export const ScheduledTaskRunsInput = Schema.Struct({
+  id: ScheduledTaskId,
+});
+export type ScheduledTaskRunsInput = typeof ScheduledTaskRunsInput.Type;
+
+export const ScheduledTaskRun = Schema.Struct({
+  runId: RunId,
+  threadId: ThreadId,
+  userMessageId: MessageId,
+  assistantMessageId: Schema.NullOr(MessageId),
+  status: OrchestrationV2RunStatus,
+  requestedAt: IsoDateTime,
+});
+export type ScheduledTaskRun = typeof ScheduledTaskRun.Type;
+
+export const ScheduledTaskRunsResult = Schema.Struct({
+  runs: ForwardCompatibleArray(ScheduledTaskRun),
+});
+export type ScheduledTaskRunsResult = typeof ScheduledTaskRunsResult.Type;
 
 export const ScheduledTaskUpsertInput = Schema.Struct({
   id: Schema.optional(ScheduledTaskId),

@@ -41,6 +41,7 @@ import {
   MAX_WEBHOOK_DELIVERY_AGE_MINUTES,
   MAX_WEBHOOK_FILTERS,
   MIN_SCHEDULED_TASK_INTERVAL_MS,
+  isCompletedOneTimeScheduledTask,
   ProviderInstanceId,
   resolveEnvironmentMachineKind,
   scheduledTaskThreadMode,
@@ -89,7 +90,7 @@ import { resolvePastedPath } from "@t3tools/shared/path";
 import { useManagedPolicy } from "~/state/managedPolicy";
 import { ManagedNotice } from "../ManagedPolicy";
 import { readEnvironmentScope } from "~/state/session";
-import { useSettingsScope } from "./SettingsScopeContext";
+import { SettingsScopeProvider, useSettingsScope } from "./SettingsScopeContext";
 import { EnvironmentRow, useEnvironmentTransportLabel } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -790,6 +791,7 @@ function ScheduledTaskRow({
   const [busy, setBusy] = useState(false);
   const [deliveriesOpen, setDeliveriesOpen] = useState(false);
   const isWebhook = task.schedule.type === "webhook";
+  const completedOnce = isCompletedOneTimeScheduledTask(task);
   const toggle = useAtomCommand(serverEnvironment.setScheduledTaskEnabled, {
     label: "scheduled task enabled",
   });
@@ -845,7 +847,11 @@ function ScheduledTaskRow({
             {task.blockedByPolicy !== undefined ? (
               task.blockedByPolicy
             ) : !task.enabled ? (
-              gt("Paused")
+              completedOnce ? (
+                gt("Completed")
+              ) : (
+                gt("Paused")
+              )
             ) : isWebhook ? (
               gt("Listening")
             ) : task.nextRunAt ? (
@@ -856,7 +862,7 @@ function ScheduledTaskRow({
               gt("Not scheduled")
             )}
           </span>
-          {task.lastRunStatus !== "never" ? (
+          {task.lastRunStatus !== "never" && !completedOnce ? (
             <Badge variant={statusVariant(task.lastRunStatus)}>
               {messages(RUN_STATUS_LABELS[task.lastRunStatus])}
             </Badge>
@@ -871,7 +877,7 @@ function ScheduledTaskRow({
         <div className="flex items-center gap-2">
           <Switch
             checked={task.enabled}
-            disabled={busy || !canOperate}
+            disabled={busy || !canOperate || completedOnce}
             aria-label={gt("Enable {title}", { title: task.title })}
             onCheckedChange={() => void act("toggle")}
           />
@@ -898,12 +904,12 @@ function ScheduledTaskRow({
                   <InboxIcon />
                   <T>Deliveries</T>
                 </MenuItem>
-              ) : (
+              ) : !completedOnce ? (
                 <MenuItem onClick={() => void act("run")}>
                   <PlayIcon />
                   <T>Run now</T>
                 </MenuItem>
-              )}
+              ) : null}
               <MenuSeparator />
               <MenuItem onClick={() => void act("delete")}>
                 <Trash2Icon />
@@ -1245,6 +1251,16 @@ function WebhookDeliveryMode({ environmentId }: { readonly environmentId: Enviro
         <T>Change in Sharing & access</T>
       </Link>
     </p>
+  );
+}
+
+export function StandaloneScheduledTaskEditorDialog(
+  props: Parameters<typeof ScheduledTaskEditorDialog>[0],
+) {
+  return (
+    <SettingsScopeProvider search={{}} onChange={() => {}}>
+      <ScheduledTaskEditorDialog {...props} />
+    </SettingsScopeProvider>
   );
 }
 

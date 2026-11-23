@@ -5,8 +5,10 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it, vi } from "@effect/vitest";
 import {
   CommandId,
+  MessageId,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ScheduledTaskError,
   ScheduledTaskId,
   type ScheduledTaskUpsertInput,
@@ -516,7 +518,7 @@ it.effect.each([
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
-it.effect("a one-time task is removed once its turn completes", () =>
+it.effect("a completed one-time task is retained disabled with its thread history", () =>
   Effect.gen(function* () {
     yield* TestClock.setTime(Date.parse("2026-11-01T07:00:00.000Z"));
     const projectId = ProjectId.make("project:test");
@@ -571,18 +573,30 @@ it.effect("a one-time task is removed once its turn completes", () =>
         Stream.filter((current) => current?.lastRunStatus === "succeeded"),
         Stream.runHead,
       );
-      const removed = service.subscribeList().pipe(
-        Stream.filter(({ tasks }) => tasks.every((candidate) => candidate.id !== task.id)),
+      const completed = service.subscribeList().pipe(
+        Stream.map(({ tasks }) => tasks.find((candidate) => candidate.id === task.id)),
+        Stream.filter(
+          (current) => current?.enabled === false && current.lastRunStatus === "succeeded",
+        ),
         Stream.runHead,
       );
       const recorded = yield* Effect.forkChild(dispatched);
-      const gone = yield* Effect.forkChild(removed);
+      const retained = yield* Effect.forkChild(completed);
       yield* TestClock.adjust("2 minutes");
       // The dispatch alone keeps it: the turn can still fail.
       assert.isNull(Option.getOrThrow(yield* Fiber.join(recorded))?.nextRunAt);
       yield* Deferred.succeed(ended, undefined);
-      yield* Fiber.join(gone);
-      assert.lengthOf((yield* service.list()).tasks, 0);
+      const kept = Option.getOrThrow(yield* Fiber.join(retained));
+      assert.isDefined(kept);
+      if (kept === undefined) return;
+      assert.isFalse(kept.enabled);
+      assert.equal(kept.threadId, ThreadId.make("thread:once"));
+      assert.equal(kept.runCount, 1);
+      const rerun = yield* service.runNow({ id: task.id }).pipe(Effect.flip);
+      assert.equal(
+        rerun.message,
+        "This one-time task has already completed. Reschedule it before running it again.",
+      );
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
@@ -1224,5 +1238,137 @@ it.effect("a run interrupted right after it reserves the task does not block the
       assert.equal(second.threadId, ThreadId.make("thread:launched"));
       assert.equal(yield* Ref.get(launches), 1);
     }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect("lists the newest visible runs for one scheduled task with message anchors", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const taskId = ScheduledTaskId.make("task:history");
+    const now = "2026-11-20T12:00:00.000Z";
+    for (const [threadId, deletedAt] of [
+      ["thread:history", null],
+      ["thread:deleted-history", now],
+    ] as const) {
+      yield* sql`INSERT INTO orchestration_v2_projection_threads ${sql.insert({
+        thread_id: threadId,
+        project_id: "project:test",
+        title: "History",
+        default_provider: "codex",
+        runtime_mode: "full-access",
+        interaction_mode: "default",
+        active_provider_thread_id: null,
+        created_at: now,
+        updated_at: now,
+        archived_at: null,
+        deleted_at: deletedAt,
+        payload_json: "{}",
+      })}`;
+    }
+    for (let ordinal = 1; ordinal <= 52; ordinal++) {
+      const suffix = ordinal.toString().padStart(2, "0");
+      const runId = `run:${suffix}`;
+      const messageId = `message:${suffix}`;
+      const requestedAt = `2026-11-20T12:${suffix}:00.000Z`;
+      yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+        message_id: messageId,
+        thread_id: "thread:history",
+        run_id: runId,
+        node_id: null,
+        role: "user",
+        streaming: 0,
+        created_at: requestedAt,
+        updated_at: requestedAt,
+        payload_json: JSON.stringify({ scheduledTaskId: taskId }),
+      })}`;
+      yield* sql`INSERT INTO orchestration_v2_projection_runs ${sql.insert({
+        run_id: runId,
+        thread_id: "thread:history",
+        ordinal,
+        provider: "codex",
+        provider_thread_id: null,
+        status: ordinal === 52 ? "running" : "completed",
+        requested_at: requestedAt,
+        completed_at: ordinal === 52 ? null : requestedAt,
+        payload_json: JSON.stringify({ userMessageId: messageId }),
+      })}`;
+    }
+    yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+      message_id: "message:assistant:older",
+      thread_id: "thread:history",
+      run_id: "run:52",
+      node_id: null,
+      role: "assistant",
+      streaming: 0,
+      created_at: "2026-11-20T12:52:01.000Z",
+      updated_at: "2026-11-20T12:52:01.000Z",
+      payload_json: "{}",
+    })}`;
+    yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+      message_id: "message:assistant:latest",
+      thread_id: "thread:history",
+      run_id: "run:52",
+      node_id: null,
+      role: "assistant",
+      streaming: 0,
+      created_at: "2026-11-20T12:52:02.000Z",
+      updated_at: "2026-11-20T12:52:02.000Z",
+      payload_json: "{}",
+    })}`;
+    yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+      message_id: "message:deleted",
+      thread_id: "thread:deleted-history",
+      run_id: "run:deleted",
+      node_id: null,
+      role: "user",
+      streaming: 0,
+      created_at: "2026-11-20T13:00:00.000Z",
+      updated_at: "2026-11-20T13:00:00.000Z",
+      payload_json: JSON.stringify({ scheduledTaskId: taskId }),
+    })}`;
+    yield* sql`INSERT INTO orchestration_v2_projection_runs ${sql.insert({
+      run_id: "run:deleted",
+      thread_id: "thread:deleted-history",
+      ordinal: 1,
+      provider: "codex",
+      provider_thread_id: null,
+      status: "completed",
+      requested_at: "2026-11-20T13:00:00.000Z",
+      completed_at: "2026-11-20T13:00:00.000Z",
+      payload_json: JSON.stringify({ userMessageId: "message:deleted" }),
+    })}`;
+
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          ManagedPolicy.layerTest(),
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+            isScratchProject: () => Effect.succeed(false),
+          }),
+          NodeCrypto.layer,
+          Layer.succeed(Scheduler.Scheduler, { register: () => Effect.void }),
+        ),
+      ),
+    );
+    const { runs } = yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      return yield* service.listRuns({ id: taskId });
+    }).pipe(Effect.provide(layer));
+
+    assert.lengthOf(runs, 50);
+    assert.deepEqual(runs[0], {
+      runId: RunId.make("run:52"),
+      threadId: ThreadId.make("thread:history"),
+      userMessageId: MessageId.make("message:52"),
+      assistantMessageId: MessageId.make("message:assistant:latest"),
+      status: "running",
+      requestedAt: "2026-11-20T12:52:00.000Z",
+    });
+    assert.equal(runs.at(-1)?.runId, "run:03");
+    assert.isTrue(runs.every((run) => run.threadId !== "thread:deleted-history"));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

@@ -1,7 +1,7 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ContextMenuSource } from "@t3tools/contracts";
-import { ChevronDownIcon, SquarePenIcon } from "lucide-react";
+import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { memo } from "react";
 
@@ -124,7 +124,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
               />
             }
           >
-            <SquarePenIcon aria-hidden />
+            <PlusIcon aria-hidden />
           </TooltipTrigger>
           <TooltipPopup>
             <T>

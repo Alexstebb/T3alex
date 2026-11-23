@@ -18,6 +18,8 @@ import {
   type ScheduledTaskWebhookDeliveryOutcome,
   type ScheduledTaskWebhookFilter,
   type ScheduledTaskListResult,
+  type ScheduledTaskRunsInput,
+  type ScheduledTaskRunsResult,
   type ScheduledTaskMutationResult,
   type ScheduledTaskRunNowInput,
   type ScheduledTaskRunNowResult,
@@ -25,6 +27,7 @@ import {
   type ScheduledTaskThreadMode,
   type ScheduledTaskUpsertInput,
   managedPolicyDeniedMessage,
+  isCompletedOneTimeScheduledTask,
   scheduledTaskThreadMode,
   managedRuntimeModeDenial,
 } from "@t3tools/contracts";
@@ -271,6 +274,12 @@ export class ScheduledTaskService extends Context.Service<
   {
     readonly list: () => Effect.Effect<ScheduledTaskListResult, ScheduledTaskError>;
     readonly subscribeList: () => Stream.Stream<ScheduledTaskListResult, ScheduledTaskError>;
+    readonly listRuns: (
+      input: ScheduledTaskRunsInput,
+    ) => Effect.Effect<ScheduledTaskRunsResult, ScheduledTaskError>;
+    readonly subscribeRuns: (
+      input: ScheduledTaskRunsInput,
+    ) => Stream.Stream<ScheduledTaskRunsResult, ScheduledTaskError>;
     readonly upsert: (
       input: ScheduledTaskUpsertInput,
     ) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
@@ -909,8 +918,8 @@ export const layer = Layer.effect(
 
     // A dispatch is recorded once the message is accepted; the provider can still
     // reject the turn after that, so follow the run and record its failure. A one-time
-    // task whose turn completed at or after its runAt is spent, so it is removed; its
-    // thread stays. A paused task always has a NULL next_run_at, so that alone proves nothing.
+    // task whose turn completed at or after its runAt is spent, so retain it disabled with
+    // its history. A paused task always has a NULL next_run_at, so that alone proves nothing.
     const recordRunOutcome = Effect.fn("ScheduledTaskService.recordRunOutcome")(function* (
       taskId: ScheduledTaskId,
       startedAtIso: string,
@@ -930,15 +939,15 @@ export const layer = Layer.effect(
       });
       if (run === null || !ThreadManagementService.isTerminalRunStatus(run.status)) return;
       if (run.status === "completed") {
-        const removed = yield* sql`
-          DELETE FROM scheduled_tasks
+        yield* sql`
+          UPDATE scheduled_tasks SET enabled = 0
           WHERE task_id = ${taskId} AND last_run_at = ${startedAtIso}
             AND last_run_status = 'succeeded' AND next_run_at IS NULL
             AND json_extract(schedule_json, '$.type') = 'once'
             AND julianday(last_run_at) >= julianday(json_extract(schedule_json, '$.runAt'))
           RETURNING task_id
         `;
-        if (removed.length > 0) yield* notifyChanged;
+        yield* notifyChanged;
         return;
       }
       // Only the run's failed errors feed latestRootProviderFailure; a long-lived task
@@ -1437,6 +1446,72 @@ export const layer = Layer.effect(
         }),
       );
 
+    // Local fork: the run lookup index is created here instead of in a numbered migration,
+    // because a fork-only migration id would collide with the next upstream migration.
+    // The index only speeds up the lookup, so a failure to create it is ignored.
+    const ensureRunLookupIndex = yield* Effect.cached(
+      sql`
+        CREATE INDEX IF NOT EXISTS orchestration_v2_projection_messages_scheduled_task_idx
+        ON orchestration_v2_projection_messages(
+          CASE WHEN json_valid(payload_json)
+            THEN json_extract(payload_json, '$.scheduledTaskId') END,
+          message_id
+        )
+        WHERE CASE WHEN json_valid(payload_json)
+          THEN json_type(payload_json, '$.scheduledTaskId') END IS NOT NULL
+      `.pipe(Effect.asVoid, Effect.ignore),
+    );
+
+    const listRuns: ScheduledTaskService["Service"]["listRuns"] = (input) =>
+      ensureRunLookupIndex.pipe(
+        Effect.andThen(() =>
+          sql<ScheduledTaskRunsResult["runs"][number]>`
+        SELECT
+          run.run_id AS "runId",
+          run.thread_id AS "threadId",
+          input.message_id AS "userMessageId",
+          (
+            SELECT reply.message_id
+            FROM orchestration_v2_projection_messages AS reply
+            WHERE reply.run_id = run.run_id AND reply.role = 'assistant'
+            ORDER BY reply.created_at DESC, reply.message_id DESC
+            LIMIT 1
+          ) AS "assistantMessageId",
+          run.status,
+          run.requested_at AS "requestedAt"
+        FROM orchestration_v2_projection_messages AS input
+        INNER JOIN orchestration_v2_projection_runs AS run
+          ON CASE WHEN json_valid(run.payload_json)
+            THEN json_extract(run.payload_json, '$.userMessageId') END = input.message_id
+        INNER JOIN orchestration_v2_projection_threads AS thread
+          ON thread.thread_id = run.thread_id AND thread.deleted_at IS NULL
+        WHERE CASE WHEN json_valid(input.payload_json)
+          THEN json_extract(input.payload_json, '$.scheduledTaskId') END = ${input.id}
+          AND CASE WHEN json_valid(input.payload_json)
+            THEN json_type(input.payload_json, '$.scheduledTaskId') END IS NOT NULL
+        ORDER BY run.requested_at DESC, run.run_id DESC
+        LIMIT 50
+      `.pipe(
+            NodeSqliteClient.readOnly,
+            Effect.map((runs) => ({ runs })),
+            Effect.mapError((cause) =>
+              taskError("Could not list schedule task runs.", { taskId: input.id, cause }),
+            ),
+          ),
+        ),
+      );
+
+    const subscribeRuns: ScheduledTaskService["Service"]["subscribeRuns"] = (input) =>
+      Stream.unwrap(
+        Effect.gen(function* () {
+          const subscription = yield* PubSub.subscribe(changesPubSub);
+          return Stream.concat(
+            Stream.fromEffect(listRuns(input)),
+            Stream.fromSubscription(subscription).pipe(Stream.mapEffect(() => listRuns(input))),
+          );
+        }),
+      );
+
     const requireDestinationThread = Effect.fn("ScheduledTaskService.requireDestinationThread")(
       function* (threadId: ThreadId, projectId: ProjectId, taskId: ScheduledTaskId) {
         const thread = yield* threadManagement
@@ -1772,6 +1847,12 @@ export const layer = Layer.effect(
         return yield* taskError("Webhook tasks run when their URL receives a request.", {
           taskId: input.id,
         });
+      }
+      if (isCompletedOneTimeScheduledTask(task)) {
+        return yield* taskError(
+          "This one-time task has already completed. Reschedule it before running it again.",
+          { taskId: input.id },
+        );
       }
       return yield* runTask(task, "manual").pipe(
         Effect.mapError((cause) =>
@@ -2691,6 +2772,8 @@ export const layer = Layer.effect(
     return ScheduledTaskService.of({
       list,
       subscribeList,
+      listRuns,
+      subscribeRuns,
       upsert,
       setEnabled,
       delete: deleteTask,

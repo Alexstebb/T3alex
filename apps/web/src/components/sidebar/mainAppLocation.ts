@@ -18,6 +18,10 @@ export function isSidebarUtilityPage(pathname: string) {
   );
 }
 
+export function isScheduledWorkspacePath(pathname: string) {
+  return pathname === "/scheduled" || pathname === "/scheduled/";
+}
+
 // Pages the root route always renders without the app shell, so they are never
 // a page to return to. Other paths seen before auth or on a prompt-link landing
 // are still recorded; they are real app URLs, so returning to one is harmless.

@@ -1,6 +1,10 @@
 import appCss from "../index.css?inline";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopeProjectRef,
+  scopeThreadRef,
+  scopedThreadKey,
+} from "@t3tools/client-runtime/environment";
 import * as shelfHooks from "../state/olderSettledShelf";
 import { createWorkspaceFocusController, workspaceAreaProps } from "../lib/workspaceFocus";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -29,6 +33,9 @@ import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../state/en
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadSelectionStore } from "../threadSelectionStore";
+import * as projectEntities from "../state/entities";
+import * as environmentHooks from "../state/environments";
 import { readLocalApi } from "../localApi";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
@@ -478,6 +485,158 @@ describe("sidebar thread menu", () => {
     await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(2));
     expect(show.mock.lastCall?.[2]).toBe("mouse");
   });
+});
+
+describe("custom sidebar sections", () => {
+  it.each([false, true])(
+    "groups threads across projects and persists sections (project folders: %s)",
+    async (boringSidebarEnabled) => {
+      using stack = new DisposableStack();
+      const previousSettings = getClientSettings();
+      const storageKey = "t3code:sidebar:custom-sections";
+      const style = document.createElement("style");
+      style.textContent = appCss;
+      document.head.append(style);
+      stack.defer(() => style.remove());
+      localStorage.removeItem(storageKey);
+      stack.defer(() => {
+        localStorage.removeItem(storageKey);
+        __setClientSettingsForTests(previousSettings);
+        useThreadSelectionStore.getState().clearSelection();
+      });
+      __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, boringSidebarEnabled });
+
+      const projects = [project("support"), project("customers")];
+      vi.mocked(useProjects).mockReturnValue(projects);
+      vi.mocked(useQuietThreadShells).mockReturnValue(
+        projects.map(({ id }, index) => threadShell(id, index)),
+      );
+      vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+      vi.mocked(useHandleNewThread).mockReturnValue({
+        activeDraftThread: null,
+        activeThread: null,
+        defaultProjectRef: null,
+        defaultProjectFallbackReady: true,
+        handleNewThread: vi.fn().mockResolvedValue(null),
+        routeDraftId: null,
+        routeThreadRef: null,
+      });
+      const show = vi.fn().mockImplementation(async (items) => {
+        return items.find((item: { id: string }) => item.id === "section:menu").children[0].id;
+      });
+      vi.mocked(readLocalApi).mockReturnValue({ contextMenu: { show } } as unknown as LocalApi);
+      const sidebar = (
+        <SidebarProvider>
+          <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+        </SidebarProvider>
+      );
+
+      {
+        await using screen = await render(sidebar);
+        const section = screen.getByRole("button", { name: "Active customers", exact: true });
+        await userEvent.click(screen.getByRole("button", { name: "New section", exact: true }));
+        await screen.getByRole("textbox", { name: "Section name" }).fill("Active customers");
+        await userEvent.click(screen.getByRole("button", { name: "Create section" }));
+        await expect.element(section).toHaveAttribute("aria-expanded", "true");
+
+        const rows = ["Thread 0", "Thread 1"].map((title) => screen.getByText(title).first());
+        if (boringSidebarEnabled) {
+          const modifier = isMacPlatform(navigator.platform) ? "Meta" : "Control";
+          for (const row of rows) await userEvent.click(row, { modifiers: [modifier] });
+          await userEvent.click(rows[0]!, { button: "right" });
+        } else {
+          for (const row of rows) await userEvent.click(row, { button: "right" });
+        }
+        for (const row of rows) {
+          await vi.waitFor(() => {
+            expect(
+              row.element().closest("[data-sidebar-row]")?.getAttribute("data-sidebar-parent"),
+            ).toBe(section.element().getAttribute("data-sidebar-row"));
+          });
+        }
+        expect(show).toHaveBeenCalledTimes(boringSidebarEnabled ? 1 : 2);
+        await userEvent.click(section);
+        await expect.element(screen.getByText("Thread 0").first()).not.toBeInTheDocument();
+        await expect.element(screen.getByText("Thread 1").first()).not.toBeInTheDocument();
+      }
+
+      await using screen = await render(sidebar);
+      const section = screen.getByRole("button", { name: "Active customers", exact: true });
+      await expect.element(section).toHaveAttribute("aria-expanded", "false");
+      await userEvent.click(section);
+      await expect.element(screen.getByText("Thread 0").first()).toBeInTheDocument();
+      await expect.element(screen.getByText("Thread 1").first()).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Section options for Active customers" }),
+      );
+      await userEvent.click(screen.getByRole("menuitem", { name: "Rename section" }));
+      await screen.getByRole("textbox", { name: "Section name" }).fill("Waiting for customer");
+      await userEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Section options for Waiting for customer" }),
+      );
+      await userEvent.click(screen.getByRole("menuitem", { name: "Remove section" }));
+      await expect
+        .element(screen.getByText("Waiting for customer", { exact: true }))
+        .not.toBeInTheDocument();
+      await expect.element(screen.getByText("Thread 0").first()).toBeInTheDocument();
+      await expect.element(screen.getByText("Thread 1").first()).toBeInTheDocument();
+    },
+  );
+});
+
+it("links an existing folder to a section and starts its chat with the plus", async () => {
+  const linked = project("customers");
+  vi.mocked(useProjects).mockReturnValue([linked]);
+  vi.mocked(useQuietThreadShells).mockReturnValue([threadShell(linked.id, 0)]);
+  vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+  using _primary = vi
+    .spyOn(environmentHooks, "usePrimaryEnvironmentId")
+    .mockReturnValue(linked.environmentId);
+  using _project = vi.spyOn(projectEntities, "readProject").mockReturnValue(linked);
+  const projectRef = scopeProjectRef(linked.environmentId, linked.id);
+  const threadId = ThreadId.make("new-client-chat");
+  const handleNewThread = vi.fn().mockResolvedValue({ draftId: DraftId.make("new"), threadId });
+  vi.mocked(useHandleNewThread).mockReturnValue({
+    activeDraftThread: null,
+    activeThread: null,
+    defaultProjectRef: null,
+    defaultProjectFallbackReady: true,
+    handleNewThread,
+    routeDraftId: null,
+    routeThreadRef: null,
+  });
+  const key = "t3code:sidebar:custom-sections";
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => localStorage.removeItem(key));
+  localStorage.setItem(
+    key,
+    JSON.stringify([{ id: "clients", name: "Client support", collapsed: false, threadKeys: [] }]),
+  );
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  cleanup.defer(() => style.remove());
+  await using screen = await render(
+    <SidebarProvider>
+      <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+    </SidebarProvider>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Section options for Client support" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Link folder", exact: true }));
+  await screen.getByRole("textbox", { name: "Project folder path" }).fill(linked.workspaceRoot);
+  await userEvent.click(screen.getByRole("button", { name: "Link folder", exact: true }));
+  const grouped = screen.getByTestId("sidebar-row-folder").filter({ hasText: "Thread 0" });
+  await expect.element(grouped).toHaveAttribute("data-sidebar-parent", "custom-section:clients");
+  await userEvent.click(screen.getByRole("button", { name: "New chat in Client support" }));
+  await vi.waitFor(() => expect(handleNewThread).toHaveBeenCalledExactlyOnceWith(projectRef));
+  await vi.waitFor(() =>
+    expect(JSON.parse(localStorage.getItem(key)!)[0].threadKeys).toContain(
+      scopedThreadKey(scopeThreadRef(linked.environmentId, threadId)),
+    ),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "New thread", exact: true }));
+  expect(openCommandPalette).toHaveBeenLastCalledWith({ open: "new-thread-in" });
 });
 
 describe("sidebar settled pagination", () => {

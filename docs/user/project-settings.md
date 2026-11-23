@@ -83,9 +83,14 @@ to override its environment defaults. Worktree directories keep their original n
 If generation fails, or a custom name is invalid or already taken, the temporary
 branch name remains.
 
-## Scheduled tasks on mobile
+## Scheduled tasks
 
-Open **Settings → Scheduled tasks** to create scheduled tasks or manage existing
+On desktop and web, expand **Scheduled** in the main sidebar. Use sections to
+group tasks and pin the ones you open often. Selecting a task follows its
+latest run. Pick an older run in **Runs** to review that result, or select the
+task again to return to its latest run.
+
+On mobile, open **Settings → Scheduled tasks** to create or manage
 ones across your connected environments. Use the settings filter to narrow the
 list by environment or project. Each task runs on the environment you choose,
 using its project, model, and workspace settings. Fixed-time schedules use that
