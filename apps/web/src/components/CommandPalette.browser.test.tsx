@@ -9,6 +9,7 @@ import { openCommandPalette } from "../commandPaletteBus";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import { LAST_USED_PROJECT_STORAGE_KEY } from "../hooks/useHandleNewThread";
 import { removeLocalStorageItem } from "../hooks/useLocalStorage";
+import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { makeThreadFixture } from "../test-fixtures";
 import type { Project, Thread } from "../types";
 import { CommandPalette } from "./CommandPalette";
@@ -150,13 +151,13 @@ describe("CommandPalette open intents", () => {
   it("offers sections as destinations alongside projects", async () => {
     const project = makeProject("customer-workspace");
     setup({ projects: [project] });
-    const key = "t3code:sidebar:custom-sections";
     using cleanup = new DisposableStack();
-    cleanup.defer(() => localStorage.removeItem(key));
+    const previousSettings = getClientSettings();
+    cleanup.defer(() => __setClientSettingsForTests(previousSettings));
     const ref = scopeProjectRef(project.environmentId, project.id);
-    localStorage.setItem(
-      key,
-      JSON.stringify([
+    __setClientSettingsForTests({
+      ...previousSettings,
+      sidebarCustomSections: [
         {
           id: "clients",
           name: "Support",
@@ -164,8 +165,8 @@ describe("CommandPalette open intents", () => {
           threadKeys: [],
           projectKey: scopedProjectKey(ref),
         },
-      ]),
-    );
+      ],
+    });
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
     openCommandPalette({ open: "new-thread-in" });
     const section = page.getByRole("option", { name: /Support/ });

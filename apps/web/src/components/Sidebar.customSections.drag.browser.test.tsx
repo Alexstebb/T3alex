@@ -7,7 +7,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { AppRoot } from "~/AppRoot";
 import "~/components/ChatView";
-import { __setClientSettingsForTests } from "~/hooks/useSettings";
+import { __setClientSettingsForTests, getClientSettings } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
 import {
   ENVIRONMENT_ID,
@@ -56,12 +56,9 @@ it.each([false, true])(
       boringSidebarEnabled,
       onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
     });
-    const storageKey = "t3code:sidebar:custom-sections";
-    using cleanup = new DisposableStack();
-    cleanup.defer(() => localStorage.removeItem(storageKey));
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify([
+    __setClientSettingsForTests({
+      ...getClientSettings(),
+      sidebarCustomSections: [
         { id: "support", name: "Support", collapsed: true, threadKeys: [] },
         {
           id: "waiting",
@@ -69,8 +66,8 @@ it.each([false, true])(
           collapsed: false,
           threadKeys: [scopedThreadKey(scopeThreadRef(ENVIRONMENT_ID, destination.id))],
         },
-      ]),
-    );
+      ],
+    });
     const router = getRouter(
       createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${first.id}`] }),
     );
@@ -89,7 +86,7 @@ it.each([false, true])(
     clockOffset += 550;
 
     await userEvent.dragAndDrop(ungrouped, support);
-    expect(JSON.parse(localStorage.getItem(storageKey)!)[0].threadKeys).toContain(
+    expect(getClientSettings().sidebarCustomSections[0]?.threadKeys).toContain(
       scopedThreadKey(scopeThreadRef(ENVIRONMENT_ID, moving.id)),
     );
     await expect.element(ungrouped).not.toBeInTheDocument();

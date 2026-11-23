@@ -493,14 +493,11 @@ describe("custom sidebar sections", () => {
     async (boringSidebarEnabled) => {
       using stack = new DisposableStack();
       const previousSettings = getClientSettings();
-      const storageKey = "t3code:sidebar:custom-sections";
       const style = document.createElement("style");
       style.textContent = appCss;
       document.head.append(style);
       stack.defer(() => style.remove());
-      localStorage.removeItem(storageKey);
       stack.defer(() => {
-        localStorage.removeItem(storageKey);
         __setClientSettingsForTests(previousSettings);
         useThreadSelectionStore.getState().clearSelection();
       });
@@ -606,13 +603,15 @@ it("links an existing folder to a section and starts its chat with the plus", as
     routeDraftId: null,
     routeThreadRef: null,
   });
-  const key = "t3code:sidebar:custom-sections";
   using cleanup = new DisposableStack();
-  cleanup.defer(() => localStorage.removeItem(key));
-  localStorage.setItem(
-    key,
-    JSON.stringify([{ id: "clients", name: "Client support", collapsed: false, threadKeys: [] }]),
-  );
+  const previousSettings = getClientSettings();
+  cleanup.defer(() => __setClientSettingsForTests(previousSettings));
+  __setClientSettingsForTests({
+    ...previousSettings,
+    sidebarCustomSections: [
+      { id: "clients", name: "Client support", collapsed: false, threadKeys: [] },
+    ],
+  });
   const style = document.createElement("style");
   style.textContent = appCss;
   document.head.append(style);
@@ -631,7 +630,7 @@ it("links an existing folder to a section and starts its chat with the plus", as
   await userEvent.click(screen.getByRole("button", { name: "New chat in Client support" }));
   await vi.waitFor(() => expect(handleNewThread).toHaveBeenCalledExactlyOnceWith(projectRef));
   await vi.waitFor(() =>
-    expect(JSON.parse(localStorage.getItem(key)!)[0].threadKeys).toContain(
+    expect(getClientSettings().sidebarCustomSections[0]?.threadKeys).toContain(
       scopedThreadKey(scopeThreadRef(linked.environmentId, threadId)),
     ),
   );

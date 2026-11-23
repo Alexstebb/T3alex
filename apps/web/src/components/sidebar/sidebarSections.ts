@@ -8,10 +8,25 @@ import {
   scopeThreadRef,
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ProjectId, ScopedProjectRef, ThreadId } from "@t3tools/contracts";
+import {
+  SidebarCustomSection as SidebarCustomSectionSchema,
+  type ClientSettings,
+  type EnvironmentId,
+  type ProjectId,
+  type ScopedProjectRef,
+  type SidebarCustomSection,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { useGT } from "gt-react";
 
-import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { getLocalStorageItem, removeLocalStorageItem } from "../../hooks/useLocalStorage";
+import {
+  getClientSettings,
+  persistClientSettingsPatch,
+  persistClientSettingsUpdate,
+  useClientSettings,
+  useClientSettingsHydrated,
+} from "../../hooks/useSettings";
 import type { NewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
@@ -19,21 +34,58 @@ import { readProject } from "../../state/entities";
 import { environmentThreadShells, threadFamilies } from "../../state/threads";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-const SidebarSection = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  collapsed: Schema.Boolean,
-  threadKeys: Schema.Array(Schema.String),
-  projectKey: Schema.optionalKey(Schema.String),
-  excludedThreadKeys: Schema.optionalKey(Schema.Array(Schema.String)),
-});
-const SidebarSections = Schema.Array(SidebarSection);
-const EMPTY_SECTIONS: typeof SidebarSections.Type = [];
+const LEGACY_SECTIONS_STORAGE_KEY = "t3code:sidebar:custom-sections";
+const LegacySidebarSections = Schema.Array(SidebarCustomSectionSchema);
 
-export type CustomSidebarSection = typeof SidebarSection.Type;
+export type CustomSidebarSection = SidebarCustomSection;
+
+const selectSections = (settings: ClientSettings) => settings.sidebarCustomSections;
+
+let legacySectionsImported = false;
+
+// Sections used to live in browser storage, which is lost when the Electron profile
+// is reset. Move them once into client settings, which live in the T3 home folder.
+function importLegacySections() {
+  if (legacySectionsImported) return;
+  legacySectionsImported = true;
+  let legacy: readonly SidebarCustomSection[] | null = null;
+  try {
+    legacy = getLocalStorageItem(LEGACY_SECTIONS_STORAGE_KEY, LegacySidebarSections);
+  } catch {
+    return;
+  }
+  if (legacy === null) return;
+  const toImport = legacy;
+  void persistClientSettingsUpdate((current) =>
+    current.sidebarCustomSections.length > 0
+      ? current
+      : { ...current, sidebarCustomSections: toImport },
+  ).then(() => {
+    try {
+      removeLocalStorageItem(LEGACY_SECTIONS_STORAGE_KEY);
+    } catch {
+      // The import is idempotent, so a leftover key is harmless.
+    }
+  });
+}
 
 export function useSidebarSections() {
-  return useLocalStorage("t3code:sidebar:custom-sections", EMPTY_SECTIONS, SidebarSections);
+  const sections = useClientSettings(selectSections);
+  const hydrated = useClientSettingsHydrated();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one-time import of sections saved by older builds in browser storage
+  useEffect(() => {
+    if (hydrated) importLegacySections();
+  }, [hydrated]);
+  const setSections = (
+    value:
+      | readonly SidebarCustomSection[]
+      | ((current: readonly SidebarCustomSection[]) => readonly SidebarCustomSection[]),
+  ) => {
+    const next =
+      typeof value === "function" ? value(getClientSettings().sidebarCustomSections) : value;
+    void persistClientSettingsPatch({ sidebarCustomSections: next });
+  };
+  return [sections, setSections] as const;
 }
 
 export function sidebarSectionRowId(id: string) {
