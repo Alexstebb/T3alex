@@ -62,7 +62,6 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   BugIcon,
-  CalendarClockIcon,
   ChartNoAxesColumnIcon,
   CheckIcon,
   ChevronRightIcon,
@@ -70,7 +69,6 @@ import {
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
-  LayersIcon,
   FolderPlusIcon,
   MessageSquareDashedIcon,
   LinkIcon,
@@ -134,7 +132,6 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useWorkflowEnvironmentIds } from "./workflows/useWorkflowEnvironmentIds";
-import { useSidebarSections, useStartSidebarSectionChat } from "./sidebar/sidebarSections";
 import { useStartTriage } from "../hooks/useStartTriage";
 import { pickTriageEnvironment } from "../lib/triageTarget";
 import { useNewProject } from "../hooks/useNewProject";
@@ -196,7 +193,7 @@ import {
 } from "../lib/utils";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
-import { expandScheduledSidebar } from "./scheduled/ScheduledSidebarGroup";
+import { useCommandPaletteForkItems } from "./commandPaletteForkItems";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -508,8 +505,8 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
-  const [sidebarSections] = useSidebarSections();
-  const startChatInSection = useStartSidebarSectionChat(handleNewThread);
+  // Local fork: custom sidebar sections and the Scheduled page.
+  const forkItems = useCommandPaletteForkItems(handleNewThread, defaultProjectRef);
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
@@ -966,28 +963,6 @@ function OpenCommandPaletteDialog(props: {
   const projectThreadItems = openingOrderThreadItems.map(
     (item) => projectJumpItems.get(item.value) ?? item,
   );
-  const sectionChatGroups: CommandPaletteGroup[] =
-    sidebarSections.length === 0
-      ? []
-      : [
-          {
-            value: "new-chat-sections",
-            label: gt("Sections"),
-            items: sidebarSections.map((section) => ({
-              kind: "action",
-              value: `new-chat-in-section:${section.id}`,
-              searchTerms: ["section", "chat", section.name],
-              title: section.name,
-              icon:
-                section.projectKey === undefined ? (
-                  <LayersIcon className={ITEM_ICON_CLASS} />
-                ) : (
-                  <FolderIcon className={ITEM_ICON_CLASS} />
-                ),
-              run: () => startChatInSection(section, defaultProjectRef),
-            })),
-          },
-        ];
 
   const {
     threadItems: allThreadItems,
@@ -1368,7 +1343,7 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0 || sidebarSections.length > 0) {
+  if (projects.length > 0 || forkItems.sectionGroups.length > 0) {
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       currentProject?.title ??
@@ -1409,7 +1384,7 @@ function OpenCommandPaletteDialog(props: {
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [
-        ...sectionChatGroups,
+        ...forkItems.sectionGroups,
         { value: NEW_THREAD_IN_GROUP, label: gt("Projects"), items: projectThreadItems },
       ],
     });
@@ -1738,17 +1713,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  actionItems.push({
-    kind: "action",
-    value: "action:scheduled",
-    searchTerms: ["schedule", "scheduled tasks", "automations", "runs"],
-    title: gt("Open Scheduled"),
-    icon: <CalendarClockIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      expandScheduledSidebar();
-      await navigate({ to: "/scheduled" });
-    },
-  });
+  actionItems.push(forkItems.openScheduled);
 
   if (
     environments.some(
@@ -1946,7 +1911,7 @@ function OpenCommandPaletteDialog(props: {
         ? addProjectEntryGroups()
         : currentView?.groups.some((group) => group.value === NEW_THREAD_IN_GROUP)
           ? [
-              ...sectionChatGroups,
+              ...forkItems.sectionGroups,
               {
                 value: NEW_THREAD_IN_GROUP,
                 label: gt("Projects"),
