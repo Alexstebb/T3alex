@@ -12859,5 +12859,10 @@
   "66e66b7b6f516dde": "Bläddra…",
   "7070d28e490778c2": "Sektionsnamn",
   "a8b04d08cf487968": "Skapa sektion",
-  "45b9cd95dab62966": "Välj en tillgänglig projektmapp för den här sektionen."
+  "45b9cd95dab62966": "Välj en tillgänglig projektmapp för den här sektionen.",
+  "0c423622f8873598": "Kommande",
+  "cd9e0573b4527cba": "Inte startad",
+  "a2ddfe4453ba1106": "Extra körtid {number}",
+  "dbe33dd9ef0750bb": "Ta bort körtiden {time}",
+  "9120e3146a9ec407": "Lägg till körtid"
 }

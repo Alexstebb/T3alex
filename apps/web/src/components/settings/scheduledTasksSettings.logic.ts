@@ -1,4 +1,8 @@
-import { isListedThreadLineage, isWebhookDedupeTemplate } from "@t3tools/contracts";
+import {
+  fixedTimesOfDay,
+  isListedThreadLineage,
+  isWebhookDedupeTemplate,
+} from "@t3tools/contracts";
 import {
   EnvironmentId,
   MAX_WEBHOOK_DELIVERY_AGE_MINUTES,
@@ -66,7 +70,9 @@ export function scheduleLabel(
       : resolve(msg("Every {seconds} sec", { seconds: Math.round(schedule.everyMs / 1000) }));
   }
   const weekdays = schedule.weekdays ?? [];
-  const time = formatTimeOfDay(schedule.timeOfDay, timestampFormat);
+  const time = fixedTimesOfDay(schedule)
+    .map((timeOfDay) => formatTimeOfDay(timeOfDay, timestampFormat))
+    .join(", ");
   const zone = scheduleTimeZoneLabel(timeZone, runAt);
   if (weekdays.length === 0) {
     return zone === undefined
@@ -114,6 +120,19 @@ export function validateScheduledTasksSearch(raw: Record<string, unknown>) {
 export type ScheduleMode = "fixed" | "once" | "interval" | "webhook";
 export type WorkspaceMode = "root" | "worktree" | "existing_worktree";
 
+export interface DraftTime {
+  /** Stable while editing, so an input keeps its focus while its value changes. */
+  readonly id: string;
+  readonly time: string;
+}
+
+let nextDraftTimeId = 0;
+
+export function newDraftTime(time = ""): DraftTime {
+  nextDraftTimeId += 1;
+  return { id: `time-${nextDraftTimeId}`, time };
+}
+
 export interface DraftState {
   readonly editingId: string | null;
   readonly title: string;
@@ -122,6 +141,8 @@ export interface DraftState {
   readonly scheduleMode: ScheduleMode;
   readonly intervalMinutes: string;
   readonly timeOfDay: string;
+  /** Local fork: more run times on the same days. Empty entries are ignored on save. */
+  readonly additionalTimes?: readonly DraftTime[];
   /** Local date and time as a `datetime-local` input value, such as 2026-11-02T15:00. */
   readonly runAt: string;
   /** The stored ISO run time, sent back unchanged when the field was not edited. */
@@ -301,9 +322,17 @@ export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedul
     return { type: "interval", everyMs };
   }
   const selectedEveryDay = draft.weekdays.size === 0 || draft.weekdays.size === 7;
+  const additionalTimesOfDay = [
+    ...new Set(
+      (draft.additionalTimes ?? [])
+        .map(({ time }) => time)
+        .filter((time) => time && time !== draft.timeOfDay),
+    ),
+  ];
   return {
     type: "fixed_time",
     timeOfDay: draft.timeOfDay,
+    ...(additionalTimesOfDay.length > 0 ? { additionalTimesOfDay } : {}),
     ...(selectedEveryDay ? {} : { weekdays: [...draft.weekdays].toSorted() }),
   };
 }
@@ -325,6 +354,10 @@ export function taskToDraft(task: ScheduledTask): DraftState {
       schedule.type === "interval" ? String(Math.max(1, schedule.everyMs / 60_000)) : "15",
     // A time input shows nothing for an unpadded hour such as 9:05, which agents may save.
     timeOfDay: schedule.type === "fixed_time" ? schedule.timeOfDay.padStart(5, "0") : "09:00",
+    additionalTimes:
+      schedule.type === "fixed_time"
+        ? (schedule.additionalTimesOfDay ?? []).map((time) => newDraftTime(time.padStart(5, "0")))
+        : [],
     runAt: schedule.type === "once" ? toDateTimeLocalValue(new Date(schedule.runAt)) : "",
     savedRunAt: schedule.type === "once" ? schedule.runAt : "",
     weekdays,

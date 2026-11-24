@@ -1,22 +1,28 @@
 import { Link } from "@tanstack/react-router";
-import { useGT } from "gt-react";
+import { useGT, useLocale } from "gt-react";
 import {
+  CalendarIcon,
   CheckIcon,
   ChevronDownIcon,
+  CircleCheckIcon,
   EllipsisIcon,
   LayersIcon,
   PinIcon,
   PinOffIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import type { ClientSettings, EnvironmentId, ScheduledTask } from "@t3tools/contracts";
+
+import { getLocalStorageItem, removeLocalStorageItem } from "../../hooks/useLocalStorage";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import {
-  isCompletedOneTimeScheduledTask,
-  type EnvironmentId,
-  type ScheduledTask,
-} from "@t3tools/contracts";
-
-import { useLocalStorage } from "../../hooks/useLocalStorage";
+  getClientSettings,
+  persistClientSettingsPatch,
+  persistClientSettingsUpdate,
+  useClientSettings,
+  useClientSettingsHydrated,
+} from "../../hooks/useSettings";
 import { cn, randomUUID } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Dialog, DialogClose, DialogFooter, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -32,12 +38,13 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import {
-  EMPTY_SCHEDULED_TASK_ORGANIZATION,
+  automaticScheduledGroup,
   indexScheduledTaskSections,
   moveScheduledTaskToSection,
   removeScheduledTaskSection,
   ScheduledTaskOrganization,
   scheduledTaskOrganizationKey,
+  scheduledTaskState,
   toggleScheduledTaskPin,
   type ScheduledTaskSection,
 } from "./scheduledTaskOrganization";
@@ -47,7 +54,58 @@ interface ScheduledTaskNavigationRow {
   readonly task: ScheduledTask;
 }
 
-const STORAGE_KEY = "t3code:scheduled-task-organization";
+const LEGACY_STORAGE_KEY = "t3code:scheduled-task-organization";
+
+const selectOrganization = (settings: ClientSettings) => settings.scheduledTaskOrganization;
+
+let legacyOrganizationImported = false;
+
+// Older builds kept this in browser storage, which is lost with the Electron profile.
+function importLegacyOrganization() {
+  if (legacyOrganizationImported) return;
+  legacyOrganizationImported = true;
+  let legacy: ScheduledTaskOrganization | null = null;
+  try {
+    legacy = getLocalStorageItem(LEGACY_STORAGE_KEY, ScheduledTaskOrganization);
+  } catch {
+    return;
+  }
+  if (legacy === null) return;
+  const toImport = legacy;
+  void persistClientSettingsUpdate((current) => {
+    const existing = current.scheduledTaskOrganization;
+    return existing.sections.length > 0 || existing.pinnedTaskKeys.length > 0
+      ? current
+      : { ...current, scheduledTaskOrganization: toImport };
+  }).then(() => {
+    try {
+      removeLocalStorageItem(LEGACY_STORAGE_KEY);
+    } catch {
+      // The import is idempotent, so a leftover key is harmless.
+    }
+  });
+}
+
+function useScheduledTaskOrganization() {
+  const organization = useClientSettings(selectOrganization);
+  const hydrated = useClientSettingsHydrated();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one-time import of organization saved by older builds in browser storage
+  useEffect(() => {
+    if (hydrated) importLegacyOrganization();
+  }, [hydrated]);
+  const setOrganization = (
+    update: (current: ScheduledTaskOrganization) => ScheduledTaskOrganization,
+  ) => {
+    void persistClientSettingsPatch({
+      scheduledTaskOrganization: update(getClientSettings().scheduledTaskOrganization),
+    });
+  };
+  return [organization, setOrganization] as const;
+}
+
+function runAtMs(task: ScheduledTask) {
+  return task.schedule.type === "once" ? Date.parse(task.schedule.runAt) : Number.POSITIVE_INFINITY;
+}
 
 export function ScheduledTaskNavigation(props: {
   readonly rows: readonly ScheduledTaskNavigationRow[];
@@ -58,11 +116,9 @@ export function ScheduledTaskNavigation(props: {
   readonly loading: boolean;
 }) {
   const gt = useGT();
-  const [organization, setOrganization] = useLocalStorage(
-    STORAGE_KEY,
-    EMPTY_SCHEDULED_TASK_ORGANIZATION,
-    ScheduledTaskOrganization,
-  );
+  const [organization, setOrganization] = useScheduledTaskOrganization();
+  const [completedOpen, setCompletedOpen] = useState(false);
+  const nowMinute = useNowMinute();
   const [renamingSection, setRenamingSection] = useState<ScheduledTaskSection>();
   const nameDialog = props.creatingSection ? null : renamingSection;
   const closeNameDialog = () => {
@@ -78,10 +134,19 @@ export function ScheduledTaskNavigation(props: {
     return row === undefined ? [] : [{ key, row }];
   });
   const sectionIdsByTask = indexScheduledTaskSections(organization);
-  const unsectionedRows = [];
+  const now = Date.parse(nowMinute);
+  const automatic = {
+    upcoming: [] as { key: string; row: ScheduledTaskNavigationRow }[],
+    all: [] as { key: string; row: ScheduledTaskNavigationRow }[],
+    completed: [] as { key: string; row: ScheduledTaskNavigationRow }[],
+  };
   for (const [key, row] of rowsByKey) {
-    if (!pinnedKeys.has(key) && !sectionIdsByTask.has(key)) unsectionedRows.push({ key, row });
+    if (pinnedKeys.has(key) || sectionIdsByTask.has(key)) continue;
+    const group = automaticScheduledGroup(row.task, now);
+    if (group !== "hidden") automatic[group].push({ key, row });
   }
+  automatic.upcoming.sort((a, b) => runAtMs(a.row.task) - runAtMs(b.row.task));
+  automatic.completed.sort((a, b) => runAtMs(b.row.task) - runAtMs(a.row.task));
 
   const saveSectionName = (name: string) => {
     setOrganization((current) =>
@@ -158,10 +223,40 @@ export function ScheduledTaskNavigation(props: {
           );
         })}
 
-        {unsectionedRows.length > 0 ? (
-          <ScheduledNavigationGroup title={gt("All tasks")} icon={<LayersIcon />}>
-            {unsectionedRows.map(renderTask)}
+        {automatic.upcoming.length > 0 ? (
+          <ScheduledNavigationGroup title={gt("Upcoming")} icon={<CalendarIcon />}>
+            {automatic.upcoming.map(renderTask)}
           </ScheduledNavigationGroup>
+        ) : null}
+
+        {automatic.all.length > 0 ? (
+          <ScheduledNavigationGroup title={gt("All tasks")} icon={<LayersIcon />}>
+            {automatic.all.map(renderTask)}
+          </ScheduledNavigationGroup>
+        ) : null}
+
+        {automatic.completed.length > 0 ? (
+          <section className="mb-3">
+            <button
+              type="button"
+              aria-expanded={completedOpen}
+              onClick={() => setCompletedOpen((open) => !open)}
+              className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>svg]:size-3.5"
+            >
+              <CircleCheckIcon aria-hidden />
+              <span className="min-w-0 flex-1">{gt("Completed")}</span>
+              {completedOpen ? null : (
+                <span className="tabular-nums">{automatic.completed.length}</span>
+              )}
+              <ChevronDownIcon
+                aria-hidden
+                className={cn("transition-transform", !completedOpen && "-rotate-90")}
+              />
+            </button>
+            {completedOpen ? (
+              <div className="space-y-0.5">{automatic.completed.map(renderTask)}</div>
+            ) : null}
+          </section>
         ) : null}
 
         {props.rows.length === 0 ? (
@@ -298,11 +393,7 @@ function ScheduledTaskNavigationItem(props: {
           )}
         />
         <span className="min-w-0 flex-1 truncate text-sm">{task.title}</span>
-        {!task.enabled ? (
-          <span className="shrink-0 text-3xs text-sidebar-muted-foreground">
-            {isCompletedOneTimeScheduledTask(task) ? gt("Completed") : gt("Paused")}
-          </span>
-        ) : null}
+        <ScheduledTaskStateLabel task={task} />
       </Link>
       <Menu>
         <MenuTrigger
@@ -402,5 +493,31 @@ function ScheduledSubsectionNameDialog(props: {
         </form>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+function ScheduledTaskStateLabel({ task }: { readonly task: ScheduledTask }) {
+  const gt = useGT();
+  const locale = useLocale();
+  const state = scheduledTaskState(task);
+  const label =
+    state === "completed"
+      ? gt("Completed")
+      : state === "paused"
+        ? gt("Paused")
+        : state === "not_started"
+          ? gt("Not started")
+          : null;
+  const runAt =
+    task.schedule.type === "once" && state !== "completed"
+      ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(
+          new Date(task.schedule.runAt),
+        )
+      : null;
+  if (label === null && runAt === null) return null;
+  return (
+    <span className="shrink-0 text-3xs text-sidebar-muted-foreground">
+      {[runAt, label].filter(Boolean).join(" · ")}
+    </span>
   );
 }

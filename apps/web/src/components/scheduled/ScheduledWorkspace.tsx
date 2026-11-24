@@ -31,6 +31,7 @@ import { SidebarInset } from "../ui/sidebar";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { ScheduledRunOutput } from "./ScheduledRunOutput";
+import { scheduledTaskState } from "./scheduledTaskOrganization";
 import { useScheduledWorkspaceTasks } from "./useScheduledWorkspaceTasks";
 
 const route = getRouteApi("/_chat/scheduled");
@@ -248,7 +249,11 @@ export function ScheduledWorkspace() {
                   </span>
                   {!row.task.enabled ? (
                     <Badge variant="outline">
-                      {completedOnce ? gt("Completed") : gt("Paused")}
+                      {completedOnce
+                        ? gt("Completed")
+                        : scheduledTaskState(row.task) === "not_started"
+                          ? gt("Not started")
+                          : gt("Paused")}
                     </Badge>
                   ) : null}
                 </div>

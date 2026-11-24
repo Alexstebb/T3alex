@@ -1,26 +1,41 @@
-import * as Schema from "effect/Schema";
+import {
+  isCompletedOneTimeScheduledTask,
+  type EnvironmentId,
+  type ScheduledTask,
+  type ScheduledTaskId,
+  type ScheduledTaskOrganization,
+} from "@t3tools/contracts";
 
-import type { EnvironmentId, ScheduledTaskId } from "@t3tools/contracts";
-
-export const ScheduledTaskSection = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  collapsed: Schema.Boolean,
-  taskKeys: Schema.Array(Schema.String),
-});
-
-export const ScheduledTaskOrganization = Schema.Struct({
-  pinnedTaskKeys: Schema.Array(Schema.String),
-  sections: Schema.Array(ScheduledTaskSection),
-});
+export { ScheduledTaskOrganization } from "@t3tools/contracts";
+export type { ScheduledTaskSection } from "@t3tools/contracts";
 
 export const EMPTY_SCHEDULED_TASK_ORGANIZATION: ScheduledTaskOrganization = {
   pinnedTaskKeys: [],
   sections: [],
 };
 
-export type ScheduledTaskSection = typeof ScheduledTaskSection.Type;
-export type ScheduledTaskOrganization = typeof ScheduledTaskOrganization.Type;
+/** Completed one-time tasks leave the list this long after their run. */
+export const COMPLETED_TASK_VISIBLE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export type ScheduledTaskState = "active" | "paused" | "not_started" | "completed";
+
+export function scheduledTaskState(task: ScheduledTask): ScheduledTaskState {
+  if (isCompletedOneTimeScheduledTask(task)) return "completed";
+  if (task.enabled) return "active";
+  return task.runCount === 0 && task.lastRunStatus === "never" ? "not_started" : "paused";
+}
+
+/** Where a task lands when the user has not pinned it or put it in a subsection. */
+export function automaticScheduledGroup(
+  task: ScheduledTask,
+  now: number,
+): "upcoming" | "completed" | "hidden" | "all" {
+  if (isCompletedOneTimeScheduledTask(task)) {
+    const ranAt = task.lastRunAt === null ? Number.NaN : Date.parse(task.lastRunAt);
+    return now - ranAt > COMPLETED_TASK_VISIBLE_MS ? "hidden" : "completed";
+  }
+  return task.schedule.type === "once" ? "upcoming" : "all";
+}
 
 export function scheduledTaskOrganizationKey(
   environmentId: EnvironmentId,

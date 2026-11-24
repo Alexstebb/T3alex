@@ -26,6 +26,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../../test/render";
+import { __setClientSettingsForTests, getClientSettings } from "../../hooks/useSettings";
 import { ScheduledWorkspace } from "./ScheduledWorkspace";
 import { ScheduledSidebarGroup, SCHEDULED_SIDEBAR_COLLAPSED_KEY } from "./ScheduledSidebarGroup";
 import { validateScheduledWorkspaceSearch } from "./scheduledWorkspaceSearch";
@@ -208,7 +209,14 @@ describe("Scheduled workspace", () => {
   });
 
   it("moves a task into a subsection, pins it and keeps both choices when reopening Scheduled", async () => {
-    using _organization = isolateLocalStorage("t3code:scheduled-task-organization");
+    const previousSettings = getClientSettings();
+    using _organization = {
+      [Symbol.dispose]: () => __setClientSettingsForTests(previousSettings),
+    };
+    __setClientSettingsForTests({
+      ...previousSettings,
+      scheduledTaskOrganization: { pinnedTaskKeys: [], sections: [] },
+    });
     using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     const router = createWorkspaceRouter();
     // The workspace needs its actual route IDs for the sidebar search state.

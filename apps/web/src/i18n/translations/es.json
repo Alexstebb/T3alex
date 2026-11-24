@@ -12847,5 +12847,10 @@
   "66e66b7b6f516dde": "Examinar…",
   "7070d28e490778c2": "Nombre de la sección",
   "a8b04d08cf487968": "Crear sección",
-  "45b9cd95dab62966": "Elige una carpeta de proyecto disponible para esta sección."
+  "45b9cd95dab62966": "Elige una carpeta de proyecto disponible para esta sección.",
+  "0c423622f8873598": "Próximas",
+  "cd9e0573b4527cba": "Sin iniciar",
+  "a2ddfe4453ba1106": "Hora de ejecución adicional {number}",
+  "dbe33dd9ef0750bb": "Quitar la hora de ejecución {time}",
+  "9120e3146a9ec407": "Añadir hora de ejecución"
 }

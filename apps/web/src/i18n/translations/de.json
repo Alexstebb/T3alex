@@ -12852,5 +12852,10 @@
   "66e66b7b6f516dde": "Durchsuchen…",
   "7070d28e490778c2": "Abschnittsname",
   "a8b04d08cf487968": "Abschnitt erstellen",
-  "45b9cd95dab62966": "Wähle einen verfügbaren Projektordner für diesen Abschnitt."
+  "45b9cd95dab62966": "Wähle einen verfügbaren Projektordner für diesen Abschnitt.",
+  "0c423622f8873598": "Anstehend",
+  "cd9e0573b4527cba": "Nicht gestartet",
+  "a2ddfe4453ba1106": "Weitere Ausführungszeit {number}",
+  "dbe33dd9ef0750bb": "Ausführungszeit {time} entfernen",
+  "9120e3146a9ec407": "Ausführungszeit hinzufügen"
 }

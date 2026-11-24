@@ -1,4 +1,8 @@
-import { MIN_SCHEDULED_TASK_INTERVAL_MS, type ScheduledTaskSchedule } from "@t3tools/contracts";
+import {
+  fixedTimesOfDay,
+  MIN_SCHEDULED_TASK_INTERVAL_MS,
+  type ScheduledTaskSchedule,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
@@ -27,22 +31,37 @@ export function nextScheduledRunAt(
     return DateTime.addDuration(from, Math.max(schedule.everyMs, MIN_SCHEDULED_TASK_INTERVAL_MS));
   }
 
-  const time = parseTimeOfDay(schedule.timeOfDay);
-  if (time === null) return null;
   const weekdays =
     schedule.weekdays && schedule.weekdays.length > 0 ? new Set(schedule.weekdays) : null;
-  for (let offset = 0; offset <= 7; offset += 1) {
-    const candidate = DateTime.setParts(DateTime.add(from, { days: offset }), {
-      hour: time.hour,
-      minute: time.minute,
-      second: 0,
-      millisecond: 0,
-    });
-    if (DateTime.toEpochMillis(candidate) <= DateTime.toEpochMillis(from)) continue;
-    if (weekdays !== null && !weekdays.has(DateTime.toParts(candidate).weekDay)) continue;
-    return candidate;
+  let earliest: DateTime.DateTime | null = null;
+  for (const value of fixedTimesOfDay(schedule)) {
+    const time = parseTimeOfDay(value);
+    if (time === null) continue;
+    for (let offset = 0; offset <= 7; offset += 1) {
+      const candidate = DateTime.setParts(DateTime.add(from, { days: offset }), {
+        hour: time.hour,
+        minute: time.minute,
+        second: 0,
+        millisecond: 0,
+      });
+      if (DateTime.toEpochMillis(candidate) <= DateTime.toEpochMillis(from)) continue;
+      if (weekdays !== null && !weekdays.has(DateTime.toParts(candidate).weekDay)) continue;
+      if (earliest === null || DateTime.toEpochMillis(candidate) < DateTime.toEpochMillis(earliest))
+        earliest = candidate;
+      break;
+    }
   }
-  return null;
+  return earliest;
+}
+
+function timesKey(schedule: Parameters<typeof fixedTimesOfDay>[0]): string | null {
+  const minutes: number[] = [];
+  for (const value of fixedTimesOfDay(schedule)) {
+    const time = parseTimeOfDay(value);
+    if (time === null) return null;
+    minutes.push(time.hour * 60 + time.minute);
+  }
+  return [...new Set(minutes)].toSorted((x, y) => x - y).join(",");
 }
 
 function weekdayKey(weekdays: ReadonlyArray<number> | undefined): string {
@@ -59,14 +78,9 @@ export function isSameSchedule(a: ScheduledTaskSchedule, b: ScheduledTaskSchedul
   if (a.type === "once") return b.type === "once" && Date.parse(a.runAt) === Date.parse(b.runAt);
   if (b.type !== "fixed_time") return false;
   // Compare parsed times so padded-hour edits do not reschedule pending runs.
-  const aTime = parseTimeOfDay(a.timeOfDay);
-  const bTime = parseTimeOfDay(b.timeOfDay);
+  const aTimes = timesKey(a);
   return (
-    aTime !== null &&
-    bTime !== null &&
-    aTime.hour === bTime.hour &&
-    aTime.minute === bTime.minute &&
-    weekdayKey(a.weekdays) === weekdayKey(b.weekdays)
+    aTimes !== null && aTimes === timesKey(b) && weekdayKey(a.weekdays) === weekdayKey(b.weekdays)
   );
 }
 

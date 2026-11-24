@@ -12861,5 +12861,10 @@
   "66e66b7b6f516dde": "Browse…",
   "7070d28e490778c2": "Section name",
   "a8b04d08cf487968": "Create section",
-  "45b9cd95dab62966": "Choose an available project folder for this section."
+  "45b9cd95dab62966": "Choose an available project folder for this section.",
+  "0c423622f8873598": "Upcoming",
+  "cd9e0573b4527cba": "Not started",
+  "a2ddfe4453ba1106": "Extra run time {number}",
+  "dbe33dd9ef0750bb": "Remove run time {time}",
+  "9120e3146a9ec407": "Add run time"
 }

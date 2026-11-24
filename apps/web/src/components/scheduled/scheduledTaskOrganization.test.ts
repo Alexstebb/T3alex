@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { EnvironmentId, ScheduledTaskId } from "@t3tools/contracts";
+import type { EnvironmentId, ScheduledTask, ScheduledTaskId } from "@t3tools/contracts";
 
 import {
+  automaticScheduledGroup,
+  COMPLETED_TASK_VISIBLE_MS,
   EMPTY_SCHEDULED_TASK_ORGANIZATION,
+  scheduledTaskState,
   indexScheduledTaskSections,
   moveScheduledTaskToSection,
   removeScheduledTaskSection,
@@ -55,5 +58,44 @@ describe("scheduled task organization", () => {
     const pinned = toggleScheduledTaskPin(EMPTY_SCHEDULED_TASK_ORGANIZATION, "task-a");
     expect(EMPTY_SCHEDULED_TASK_ORGANIZATION.pinnedTaskKeys).toEqual([]);
     expect(pinned.pinnedTaskKeys).toEqual(["task-a"]);
+  });
+});
+
+const baseTask = {
+  enabled: false,
+  schedule: { type: "fixed_time", timeOfDay: "09:00" },
+  nextRunAt: null,
+  lastRunAt: null,
+  lastRunStatus: "never",
+  runCount: 0,
+} as unknown as ScheduledTask;
+const now = Date.parse("2026-11-23T12:00:00.000Z");
+
+describe("scheduled task grouping", () => {
+  it("tells tasks that never ran from paused and completed ones", () => {
+    expect(scheduledTaskState(baseTask)).toBe("not_started");
+    expect(scheduledTaskState({ ...baseTask, enabled: true })).toBe("active");
+    expect(
+      scheduledTaskState({ ...baseTask, lastRunStatus: "failed", runCount: 1 } as ScheduledTask),
+    ).toBe("paused");
+    const completed = {
+      ...baseTask,
+      schedule: { type: "once", runAt: "2026-11-20T08:00:00.000Z" },
+      lastRunAt: "2026-11-20T08:00:05.000Z",
+      lastRunStatus: "succeeded",
+      runCount: 1,
+    } as ScheduledTask;
+    expect(scheduledTaskState(completed)).toBe("completed");
+    expect(automaticScheduledGroup(completed, now)).toBe("completed");
+    expect(automaticScheduledGroup(completed, now + COMPLETED_TASK_VISIBLE_MS)).toBe("hidden");
+  });
+
+  it("puts pending one-time tasks under upcoming and recurring ones under all tasks", () => {
+    const upcoming = {
+      ...baseTask,
+      schedule: { type: "once", runAt: "2027-01-04T08:45:00.000Z" },
+    } as ScheduledTask;
+    expect(automaticScheduledGroup(upcoming, now)).toBe("upcoming");
+    expect(automaticScheduledGroup(baseTask, now)).toBe("all");
   });
 });

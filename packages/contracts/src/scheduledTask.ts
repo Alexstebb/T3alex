@@ -37,6 +37,12 @@ const ScheduledTaskIntervalSchedule = Schema.Struct({
 const ScheduledTaskFixedTimeSchedule = Schema.Struct({
   type: Schema.Literal("fixed_time"),
   timeOfDay: TimeOfDay,
+  // Local fork: more run times on the same days, so one task replaces several copies.
+  additionalTimesOfDay: Schema.optional(
+    Schema.Array(TimeOfDay).annotate({
+      description: "More local times on the same days, such as ['12:15','14:15'].",
+    }),
+  ),
   weekdays: Schema.optional(
     Schema.Array(
       Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 6 })).annotate({
@@ -192,6 +198,14 @@ const ScheduledTaskUpsertWebhookSchedule = Schema.Struct({
   description:
     "Run per webhook request. Prompt can use {{body.path}}, {{headers.name}}, {{query.name}}, {{body}}, {{request}}.",
 });
+
+/** All local run times of a fixed-time schedule, first time first, without duplicates. */
+export function fixedTimesOfDay(schedule: {
+  readonly timeOfDay: string;
+  readonly additionalTimesOfDay?: ReadonlyArray<string> | undefined;
+}): string[] {
+  return [...new Set([schedule.timeOfDay, ...(schedule.additionalTimesOfDay ?? [])])];
+}
 
 /** Accept legacy sub-minute schedules so users can still manage them. */
 export const ScheduledTaskSchedule = Schema.Union([

@@ -426,6 +426,20 @@ export const SidebarCustomSection = Schema.Struct({
 export type SidebarCustomSection = typeof SidebarCustomSection.Type;
 export const SidebarCustomSections = Schema.Array(SidebarCustomSection);
 
+// Local fork: pins and subsections on the Scheduled page, kept with the other client settings.
+export const ScheduledTaskSection = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  collapsed: Schema.Boolean,
+  taskKeys: Schema.Array(Schema.String),
+});
+export type ScheduledTaskSection = typeof ScheduledTaskSection.Type;
+export const ScheduledTaskOrganization = Schema.Struct({
+  pinnedTaskKeys: Schema.Array(Schema.String),
+  sections: Schema.Array(ScheduledTaskSection),
+});
+export type ScheduledTaskOrganization = typeof ScheduledTaskOrganization.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
@@ -631,6 +645,9 @@ export const ClientSettingsSchema = Schema.Struct({
   // KaTeX out of the render path entirely.
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarCustomSections: SidebarCustomSections.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  scheduledTaskOrganization: ScheduledTaskOrganization.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ pinnedTaskKeys: [], sections: [] })),
+  ),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -2199,5 +2216,6 @@ export const ClientSettingsPatch = Schema.Struct({
   wordWrap: Schema.optionalKey(Schema.Boolean),
   mathRenderingEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarCustomSections: Schema.optionalKey(SidebarCustomSections),
+  scheduledTaskOrganization: Schema.optionalKey(ScheduledTaskOrganization),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

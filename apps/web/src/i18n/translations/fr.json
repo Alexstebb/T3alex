@@ -12852,5 +12852,10 @@
   "66e66b7b6f516dde": "Parcourir…",
   "7070d28e490778c2": "Nom de la section",
   "a8b04d08cf487968": "Créer la section",
-  "45b9cd95dab62966": "Choisissez un dossier de projet disponible pour cette section."
+  "45b9cd95dab62966": "Choisissez un dossier de projet disponible pour cette section.",
+  "0c423622f8873598": "À venir",
+  "cd9e0573b4527cba": "Pas démarrée",
+  "a2ddfe4453ba1106": "Heure d’exécution supplémentaire {number}",
+  "dbe33dd9ef0750bb": "Supprimer l’heure d’exécution {time}",
+  "9120e3146a9ec407": "Ajouter une heure d’exécution"
 }
