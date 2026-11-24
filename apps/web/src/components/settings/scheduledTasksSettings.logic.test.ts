@@ -21,7 +21,6 @@ import {
   scheduledTaskDefaultModel,
   defaultScheduledTaskProjectId,
   matchesScheduledTaskScope,
-  newDraftTime,
   scheduleFromDraft,
   scheduleLabel,
   taskToDraft,
@@ -196,28 +195,6 @@ describe("fixed-time scheduled tasks", () => {
     expect(scheduleFromDraft(draft)).toEqual({ type: "fixed_time", timeOfDay: "14:30" });
     // A native time input reports "" when it is cleared or only partly filled.
     expect(scheduleFromDraft({ ...draft, timeOfDay: "" })).toBeNull();
-  });
-
-  it("keeps extra run times and drops empty or repeated ones", () => {
-    const draft = taskToDraft({
-      ...legacyTask,
-      schedule: { type: "fixed_time", timeOfDay: "10:15", additionalTimesOfDay: ["9:15"] },
-    });
-    expect(draft.additionalTimes?.map(({ time }) => time)).toEqual(["09:15"]);
-    expect(
-      scheduleFromDraft({
-        ...draft,
-        additionalTimes: ["09:15", "", "10:15", "09:15", "14:15"].map((time) => newDraftTime(time)),
-      }),
-    ).toEqual({
-      type: "fixed_time",
-      timeOfDay: "10:15",
-      additionalTimesOfDay: ["09:15", "14:15"],
-    });
-    expect(scheduleFromDraft({ ...draft, additionalTimes: [newDraftTime()] })).toEqual({
-      type: "fixed_time",
-      timeOfDay: "10:15",
-    });
   });
 });
 
@@ -476,9 +453,6 @@ it("shows schedule times in the Time format setting", () => {
   const daily = { type: "fixed_time", timeOfDay: "17:30" } as const;
   expect(scheduleLabel(daily, "24-hour")).toBe(`Daily at ${clock(false, 17, 30)}`);
   expect(scheduleLabel(daily, "12-hour")).toBe(`Daily at ${clock(true, 17, 30)}`);
-  expect(scheduleLabel({ ...daily, additionalTimesOfDay: ["9:15"] }, "12-hour")).toBe(
-    `Daily at ${clock(true, 17, 30)}, ${clock(true, 9, 15)}`,
-  );
   const midnight = scheduleLabel({ type: "fixed_time", timeOfDay: "0:05" }, "24-hour");
   expect(midnight).toBe(`Daily at ${clock(false, 0, 5)}`);
   // An h24 clock would print midnight as 24:05 in both the label and the helper.

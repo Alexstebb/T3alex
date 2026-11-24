@@ -14,7 +14,6 @@ import {
   PlayIcon,
   PlusIcon,
   Trash2Icon,
-  XIcon,
 } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import type {
@@ -92,6 +91,7 @@ import { useManagedPolicy } from "~/state/managedPolicy";
 import { ManagedNotice } from "../ManagedPolicy";
 import { readEnvironmentScope } from "~/state/session";
 import { SettingsScopeProvider, useSettingsScope } from "./SettingsScopeContext";
+import { ScheduledTaskExtraRunTimes } from "../scheduled/ScheduledTaskExtraRunTimes";
 import { EnvironmentRow, useEnvironmentTransportLabel } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -105,7 +105,6 @@ import {
   webhookDeliveryLabel,
   defaultScheduledTaskProjectId,
   matchesScheduledTaskScope,
-  newDraftTime,
   scheduleFromDraft,
   scheduleLabel,
   scheduledTaskDefaultModel,
@@ -2296,56 +2295,7 @@ function ScheduledTaskEditorForm({
                       setDraft((current) => ({ ...current, timeOfDay: event.target.value }))
                     }
                   />
-                  {(draft.additionalTimes ?? []).map(({ id, time }, index) => (
-                    <span key={id} className="flex items-center">
-                      <Input
-                        type="time"
-                        nativeInput
-                        className="w-32"
-                        aria-label={gt("Extra run time {number}", { number: index + 2 })}
-                        value={time}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setDraft((current) => ({
-                            ...current,
-                            additionalTimes: (current.additionalTimes ?? []).map((item) =>
-                              item.id === id ? { ...item, time: value } : item,
-                            ),
-                          }));
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        size="icon-xs"
-                        variant="ghost-muted"
-                        aria-label={gt("Remove run time {time}", { time })}
-                        onClick={() =>
-                          setDraft((current) => ({
-                            ...current,
-                            additionalTimes: (current.additionalTimes ?? []).filter(
-                              (item) => item.id !== id,
-                            ),
-                          }))
-                        }
-                      >
-                        <XIcon aria-hidden />
-                      </Button>
-                    </span>
-                  ))}
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    aria-label={gt("Add run time")}
-                    onClick={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        additionalTimes: [...(current.additionalTimes ?? []), newDraftTime()],
-                      }))
-                    }
-                  >
-                    <PlusIcon aria-hidden />
-                  </Button>
+                  <ScheduledTaskExtraRunTimes draft={draft} setDraft={setDraft} />
                   {runAtZone === undefined ? null : (
                     <span id="scheduled-task-time-zone" className="text-xs text-muted-foreground">
                       {runAtZone}
