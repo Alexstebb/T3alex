@@ -1,4 +1,5 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   EnvironmentId,
   MessageId,
@@ -21,6 +22,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
+import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -28,8 +30,10 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import { act, render } from "../../../test/render";
 import { __setClientSettingsForTests, getClientSettings } from "../../hooks/useSettings";
+import { assistantCitationFromLocation } from "../../lib/assistantCitationNavigation";
 import { ScheduledWorkspace } from "./ScheduledWorkspace";
 import { ScheduledSidebarGroup, SCHEDULED_SIDEBAR_COLLAPSED_KEY } from "./ScheduledSidebarGroup";
+import { SCHEDULED_RUNS_PANEL_OPEN_KEY, ScheduledThreadPanel } from "./ScheduledThreadPanel";
 import { scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
 import { validateScheduledWorkspaceSearch } from "./scheduledWorkspaceSearch";
 import { SidebarProvider } from "../ui/sidebar";
@@ -62,14 +66,25 @@ const environment = { environmentId, label: "Local" };
 const resultAtom = Atom.make<AsyncResult.AsyncResult<ScheduledTaskRunsResult, never>>(
   AsyncResult.initial(),
 );
+// The server answers a thread lookup with the task's runs when one of them went to that thread.
+const threadLookupAtom = Atom.family((threadId: string) =>
+  Atom.make((get): AsyncResult.AsyncResult<ScheduledTaskRunsResult, never> => {
+    const result = get(resultAtom);
+    if (result._tag !== "Success") return result;
+    return result.value.runs.some((run) => run.threadId === threadId)
+      ? result
+      : AsyncResult.success({ taskId: null, runs: [] });
+  }),
+);
 const tasksAtom = Atom.make<readonly ScheduledTask[]>([task]);
 const permitted = Atom.make(true);
-const readWorkspaceTasks = vi.hoisted(() => vi.fn());
 const commandSpy = vi.hoisted(() => vi.fn<(label: string, input: unknown) => void>());
+const threadMessages = vi.hoisted(
+  () => new Map<string, readonly { id: string; role: "assistant"; text: string }[]>(),
+);
 
 vi.mock(import("./useScheduledWorkspaceTasks"), () => ({
   useScheduledWorkspaceTasks: () => {
-    readWorkspaceTasks();
     const tasks = useAtomValue(tasksAtom);
     return {
       rows: tasks.map((item) => ({ environmentId, timeZone: undefined, task: item })),
@@ -86,7 +101,8 @@ vi.mock(import("../../state/server"), async (original) => {
     ...module,
     serverEnvironment: {
       ...module.serverEnvironment,
-      scheduledTaskRunsLive: () => resultAtom,
+      scheduledTaskRunsLive: ({ input }: { input: { id: string } | { threadId: string } }) =>
+        "threadId" in input ? threadLookupAtom(input.threadId) : resultAtom,
       upsertScheduledTask: { ...module.serverEnvironment.upsertScheduledTask, ...permitted_ },
       setScheduledTaskEnabled: {
         ...module.serverEnvironment.setScheduledTaskEnabled,
@@ -94,8 +110,22 @@ vi.mock(import("../../state/server"), async (original) => {
       },
       deleteScheduledTask: { ...module.serverEnvironment.deleteScheduledTask, ...permitted_ },
     },
-  };
+  } as never;
 });
+vi.mock(import("../../state/threads"), async (original) => ({
+  ...(await original()),
+  useEnvironmentThread: (_environmentId, threadId) =>
+    ({
+      data:
+        threadId === null
+          ? Option.none()
+          : Option.some({ thread: {}, messages: threadMessages.get(threadId) ?? [] }),
+      status: "live",
+      error: Option.none(),
+      history: { hasMoreHistory: false, loading: false, error: null },
+      sequence: 1,
+    }) as never,
+}));
 vi.mock(import("../../state/use-atom-command"), () => ({
   useAtomCommand: ((command: { readonly label: string }) => async (value: { input: unknown }) => {
     commandSpy(command.label, value.input);
@@ -106,26 +136,24 @@ vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   useProject: () => null,
 }));
-vi.mock(import("./ScheduledRunOutput"), () => ({
-  ScheduledRunOutput: ({ run }) => <p>Output for {run.runId}</p>,
-}));
 
-function run(name: string, requestedAt: string): ScheduledTaskRun {
+function run(name: string, requestedAt: string, threadId: string): ScheduledTaskRun {
   return {
     runId: RunId.make(name),
-    threadId: ThreadId.make("shared-thread"),
+    threadId: ThreadId.make(threadId),
     userMessageId: MessageId.make(name + "-user"),
-    assistantMessageId: null,
+    assistantMessageId: MessageId.make(name + "-reply"),
     status: "completed",
     requestedAt,
   };
 }
 
-const older = run("first", "2026-11-19T09:00:00.000Z");
-const latest = run("second", "2026-11-20T09:00:00.000Z");
-const next = run("third", "2026-11-21T09:00:00.000Z");
+const older = run("first", "2026-11-19T09:00:00.000Z", "thread-a");
+const latest = run("second", "2026-11-20T09:00:00.000Z", "thread-b");
+const sharedOlder = run("first", "2026-11-19T09:00:00.000Z", "shared-thread");
+const sharedLatest = run("second", "2026-11-20T09:00:00.000Z", "shared-thread");
 
-function createWorkspaceRouter() {
+function createWorkspaceRouter(initialEntry: string) {
   const root = createRootRoute({ component: Outlet });
   const chat = createRoute({
     id: "_chat",
@@ -151,9 +179,28 @@ function createWorkspaceRouter() {
     validateSearch: validateScheduledWorkspaceSearch,
     component: ScheduledWorkspace,
   });
+  // Mirrors the `_chat` layout: the thread's chat with the runs panel beside it.
+  const thread = createRoute({
+    path: "/$environmentId/$threadId",
+    getParentRoute: () => chat,
+    component: function ThreadView() {
+      const params = thread.useParams();
+      return (
+        <>
+          <p>Chat for {params.threadId}</p>
+          <ScheduledThreadPanel
+            threadRef={scopeThreadRef(
+              EnvironmentId.make(params.environmentId),
+              ThreadId.make(params.threadId),
+            )}
+          />
+        </>
+      );
+    },
+  });
   return createRouter({
-    routeTree: root.addChildren([chat.addChildren([index, scheduled])]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: root.addChildren([chat.addChildren([index, scheduled, thread])]),
+    history: createMemoryHistory({ initialEntries: [initialEntry] }),
     disableGlobalCatchBoundary: true,
   });
 }
@@ -164,13 +211,15 @@ async function viewport(width: number) {
   return { [Symbol.asyncDispose]: () => page.viewport(previous.width, previous.height) };
 }
 
-function isolateLocalStorage(key: string) {
-  const previous = localStorage.getItem(key);
-  localStorage.removeItem(key);
+function isolateLocalStorage(...keys: string[]) {
+  const previous = keys.map((key) => [key, localStorage.getItem(key)] as const);
+  for (const key of keys) localStorage.removeItem(key);
   return {
     [Symbol.dispose]() {
-      if (previous === null) localStorage.removeItem(key);
-      else localStorage.setItem(key, previous);
+      for (const [key, value] of previous) {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      }
     },
   };
 }
@@ -191,17 +240,26 @@ function withOrganization(patch: Partial<ScheduledTaskOrganization> = {}) {
 }
 
 /** Shared per-test state: a registry holding the runs and the task list. */
-function createFixture(options: { runs?: readonly ScheduledTaskRun[]; task?: ScheduledTask } = {}) {
+function createFixture(
+  options: {
+    runs?: readonly ScheduledTaskRun[];
+    task?: ScheduledTask;
+    initialEntry?: string;
+  } = {},
+) {
   const registry = AtomRegistry.make();
   const unmountRuns = registry.mount(resultAtom);
   const unmountTasks = registry.mount(tasksAtom);
-  registry.set(resultAtom, AsyncResult.success({ runs: options.runs ?? [latest, older] }));
+  registry.set(
+    resultAtom,
+    AsyncResult.success({ taskId: task.id, runs: options.runs ?? [latest, older] }),
+  );
   registry.set(tasksAtom, [options.task ?? task]);
   commandSpy.mockReset();
-  readWorkspaceTasks.mockClear();
+  threadMessages.clear();
   return {
     registry,
-    router: createWorkspaceRouter(),
+    router: createWorkspaceRouter(options.initialEntry ?? "/"),
     [Symbol.dispose]() {
       unmountRuns();
       unmountTasks();
@@ -225,91 +283,145 @@ async function openTask(screen: Awaited<ReturnType<typeof renderWorkspace>>, nam
   await userEvent.click(screen.getByRole("link", { name }));
 }
 
-describe("Scheduled workspace", () => {
-  it("opens a task on its latest run, lists every run beside it and keeps an older pick when new runs arrive", async () => {
+const runButtons = (screen: Awaited<ReturnType<typeof renderWorkspace>>) =>
+  screen.getByRole("complementary", { name: "Runs" }).getByRole("button", { name: /Completed/ });
+
+describe("Scheduled task chats", () => {
+  it("opens a task in its latest run's chat with the runs beside it and switches runs there", async () => {
     await using _viewport = await viewport(1280);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
     using _organization = withOrganization();
     using fixture = createFixture();
-    const { registry, router } = fixture;
+    const { router } = fixture;
     await using screen = await renderWorkspace(fixture);
-    const group = screen.getByRole("button", { name: "Scheduled", exact: true });
-    await expect.element(group).toHaveAttribute("aria-expanded", "false");
-    await userEvent.click(group);
-    await expect.element(group).toHaveAttribute("aria-expanded", "true");
-    expect(router.state.location.pathname).toBe("/");
-    const originalGroup = group.element();
-    await userEvent.click(screen.getByRole("link", { name: "Daily briefing Paused" }));
+    await openTask(screen, /^Daily briefing/);
 
-    await expect.element(screen.getByText("Output for second")).toBeVisible();
-    expect(router.state.location.search).not.toHaveProperty("runId");
-    expect(group.element()).toBe(originalGroup);
-    const history = screen.getByRole("complementary", { name: "Runs" });
-    await expect.element(history.getByRole("heading", { name: "Runs" })).toBeVisible();
-    expect(history.getByRole("button", { name: /Completed/ }).elements()).toHaveLength(2);
-    await expect
-      .element(history.getByRole("button", { name: /Completed/ }).first())
-      .toHaveAttribute("aria-current", "true");
-    await expect.element(screen.getByRole("heading", { name: "Daily briefing" })).toBeVisible();
-    for (const name of ["Edit", "Delete", "Details"]) {
-      await expect.element(screen.getByRole("button", { name, exact: true })).toBeVisible();
+    await expect.element(screen.getByText("Chat for thread-b")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/local/thread-b");
+    const panel = screen.getByRole("complementary", { name: "Runs" });
+    await expect.element(panel.getByRole("heading", { name: "Daily briefing" })).toBeVisible();
+    await expect.element(panel.getByText(/^Daily at/)).toBeVisible();
+    for (const name of ["Edit", "Resume", "Delete", "Details"]) {
+      await expect.element(panel.getByRole("button", { name, exact: true })).toBeVisible();
     }
-    await expect.element(screen.getByText("Back to runs")).not.toBeInTheDocument();
+    expect(runButtons(screen).elements()).toHaveLength(2);
+    await expect.element(runButtons(screen).first()).toHaveAttribute("aria-current", "true");
+    await expect
+      .element(screen.getByRole("link", { name: /^Daily briefing/ }))
+      .toHaveAttribute("aria-current", "page");
 
-    await userEvent.click(history.getByRole("button", { name: /Completed/ }).last());
-    await expect.element(screen.getByText("Output for first")).toBeVisible();
-    expect(router.state.location.search).toMatchObject({ runId: "first" });
-    await act(() => registry.set(resultAtom, AsyncResult.success({ runs: [next, latest, older] })));
-    await expect.element(screen.getByText("Output for first")).toBeVisible();
+    await userEvent.click(panel.getByRole("button", { name: "Details" }));
+    await expect.element(panel.getByText("Collect the results")).toBeVisible();
+
+    await userEvent.click(runButtons(screen).last());
+    await expect.element(screen.getByText("Chat for thread-a")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/local/thread-a");
+    await expect.element(runButtons(screen).last()).toHaveAttribute("aria-current", "true");
+    await expect
+      .element(screen.getByRole("link", { name: /^Daily briefing/ }))
+      .toHaveAttribute("aria-current", "page");
+  });
+
+  it("lands on the latest run's reply in a shared thread and scrolls to another run's reply", async () => {
+    await using _viewport = await viewport(1280);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
+    using _organization = withOrganization();
+    using fixture = createFixture({
+      runs: [sharedLatest, sharedOlder],
+      task: { ...task, threadId: ThreadId.make("shared-thread"), threadMode: "continue" },
+    });
+    threadMessages.set("shared-thread", [
+      {
+        id: "first-reply",
+        role: "assistant",
+        text: "## Monday\n\nThree tickets are waiting today.",
+      },
+      {
+        id: "second-reply",
+        role: "assistant",
+        text: "**Tuesday:** all clear in the support queue.",
+      },
+    ]);
+    const { router } = fixture;
+    await using screen = await renderWorkspace(fixture);
+    await openTask(screen, /^Daily briefing/);
+
+    await expect.element(screen.getByText("Chat for shared-thread")).toBeVisible();
     await vi.waitFor(() =>
-      expect(history.getByRole("button", { name: /Completed/ }).elements()).toHaveLength(3),
+      expect(assistantCitationFromLocation(router.state.location.href)).toMatchObject({
+        threadId: "shared-thread",
+        messageId: "second-reply",
+        text: "all clear in the support queue",
+      }),
     );
+    await expect.element(runButtons(screen).first()).toHaveAttribute("aria-current", "true");
 
-    await userEvent.click(history.getByRole("button", { name: /Completed/ }).first());
-    await expect.element(screen.getByText("Output for third")).toBeVisible();
-    expect(router.state.location.search).not.toHaveProperty("runId");
+    await userEvent.click(runButtons(screen).last());
+    await vi.waitFor(() =>
+      expect(assistantCitationFromLocation(router.state.location.href)).toMatchObject({
+        messageId: "first-reply",
+        text: "Three tickets are waiting today",
+      }),
+    );
+    expect(router.state.location.pathname).toBe("/local/shared-thread");
+    await expect.element(runButtons(screen).last()).toHaveAttribute("aria-current", "true");
   });
 
-  it("follows new runs while the latest one is open", async () => {
+  it("highlights the task while its run's chat is open from anywhere, and only then", async () => {
     await using _viewport = await viewport(1280);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
     using _organization = withOrganization();
-    using fixture = createFixture();
+    using fixture = createFixture({ initialEntry: "/local/thread-a" });
     await using screen = await renderWorkspace(fixture);
-    await openTask(screen, /^Daily briefing/);
-    await expect.element(screen.getByText("Output for second")).toBeVisible();
+    await expect.element(screen.getByText("Chat for thread-a")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    const link = screen.getByRole("link", { name: /^Daily briefing/ });
+    await expect.element(link).toHaveAttribute("aria-current", "page");
+    await expect.element(runButtons(screen).last()).toHaveAttribute("aria-current", "true");
+
     await act(() =>
-      fixture.registry.set(resultAtom, AsyncResult.success({ runs: [next, latest, older] })),
+      fixture.router.navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId: "unrelated" },
+      }),
     );
-    await expect.element(screen.getByText("Output for third")).toBeVisible();
-    expect(fixture.router.state.location.search).not.toHaveProperty("runId");
-  });
-
-  it("shows the output with the runs folded above it on a narrow window", async () => {
-    await using _viewport = await viewport(700);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
-    using _organization = withOrganization();
-    using fixture = createFixture();
-    await using screen = await renderWorkspace(fixture);
-    await openTask(screen, /^Daily briefing/);
-    await expect.element(screen.getByText("Output for second")).toBeVisible();
-    const disclosure = screen.getByRole("button", { name: /^Runs/ });
-    await expect.element(disclosure).toHaveAttribute("aria-expanded", "false");
-    expect(disclosure.element().textContent).toContain("Runs2");
+    await expect.element(screen.getByText("Chat for unrelated")).toBeVisible();
+    await expect.element(link).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("complementary", { name: "Runs" }).elements()).toHaveLength(0);
-    expect(screen.getByRole("button", { name: /Completed/ }).elements()).toHaveLength(0);
-
-    await userEvent.click(disclosure);
-    await expect.element(disclosure).toHaveAttribute("aria-expanded", "true");
-    await userEvent.click(screen.getByRole("button", { name: /Completed/ }).last());
-    await expect.element(screen.getByText("Output for first")).toBeVisible();
-    await expect.element(disclosure).toHaveAttribute("aria-expanded", "false");
-    expect(fixture.router.state.location.search).toMatchObject({ runId: "first" });
   });
 
-  it("shows the header, an empty runs panel and the instructions when a task has no runs", async () => {
+  it("hides the runs panel and brings it back", async () => {
     await using _viewport = await viewport(1280);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
+    using _organization = withOrganization();
+    using fixture = createFixture({ initialEntry: "/local/thread-b" });
+    await using screen = await renderWorkspace(fixture);
+    await userEvent.click(screen.getByRole("button", { name: "Hide runs" }));
+    await expect
+      .element(screen.getByRole("complementary", { name: "Runs" }))
+      .not.toBeInTheDocument();
+    expect(localStorage.getItem(SCHEDULED_RUNS_PANEL_OPEN_KEY)).toBe("false");
+
+    await userEvent.click(screen.getByRole("button", { name: "Show runs" }));
+    await expect.element(screen.getByRole("complementary", { name: "Runs" })).toBeVisible();
+    await expect.element(screen.getByText("Chat for thread-b")).toBeVisible();
+  });
+
+  it("opens the task page for a task that has not run yet", async () => {
+    await using _viewport = await viewport(1280);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization();
     using fixture = createFixture({
       runs: [],
@@ -317,16 +429,19 @@ describe("Scheduled workspace", () => {
     });
     await using screen = await renderWorkspace(fixture);
     await openTask(screen, /^Daily briefing/);
+    expect(fixture.router.state.location.pathname).toBe("/scheduled");
     await expect.element(screen.getByRole("heading", { name: "Daily briefing" })).toBeVisible();
     await expect.element(screen.getByText("Collect the results")).toBeVisible();
     const history = screen.getByRole("complementary", { name: "Runs" });
     await expect.element(history.getByText("No runs yet")).toBeVisible();
-    await expect.element(screen.getByText(/^Output for/)).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("link", { name: /^Daily briefing/ }))
+      .toHaveAttribute("aria-current", "page");
   });
 
-  it("deletes a task from its menu after confirmation and clears what was stored for it", async () => {
+  it("deletes a task from its menu after confirmation, keeps the chat and clears what was stored for it", async () => {
     await using _viewport = await viewport(1280);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization({
       pinnedTaskKeys: [taskKey, "other"],
       sections: [{ id: "s", name: "Support", collapsed: false, taskKeys: [taskKey] }],
@@ -338,7 +453,7 @@ describe("Scheduled workspace", () => {
     });
     await using screen = await renderWorkspace(fixture);
     await openTask(screen, /^Daily briefing/);
-    await expect.element(screen.getByText("Output for second")).toBeVisible();
+    await expect.element(screen.getByText("Chat for thread-b")).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "Options for Daily briefing" }));
     await userEvent.click(page.getByRole("menuitem", { name: "Delete" }));
@@ -357,37 +472,43 @@ describe("Scheduled workspace", () => {
         id: task.id,
       }),
     );
-    await vi.waitFor(() => expect(fixture.router.state.location.search).toEqual({}));
-    expect(fixture.router.state.location.pathname).toBe("/scheduled");
-    await expect.element(screen.getByText("Select a scheduled task")).not.toBeInTheDocument();
     await vi.waitFor(() => {
       const organization = getClientSettings().scheduledTaskOrganization;
       expect(organization.pinnedTaskKeys).toEqual(["other"]);
       expect(organization.sections[0]?.taskKeys).toEqual([]);
       expect(Object.keys(organization.lastSeenAt)).toEqual(["other"]);
     });
+    expect(fixture.router.state.location.pathname).toBe("/local/thread-b");
+    await expect
+      .element(screen.getByRole("complementary", { name: "Runs" }))
+      .not.toBeInTheDocument();
   });
 
-  it("deletes the open task from the page header", async () => {
+  it("deletes the task from the runs panel", async () => {
     await using _viewport = await viewport(1280);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
     using _organization = withOrganization();
-    using fixture = createFixture();
-    commandSpy.mockImplementation((label) => {
-      if (label.endsWith(":delete")) fixture.registry.set(tasksAtom, []);
-    });
+    using fixture = createFixture({ initialEntry: "/local/thread-b" });
     await using screen = await renderWorkspace(fixture);
-    await openTask(screen, /^Daily briefing/);
-    await userEvent.click(screen.getByRole("button", { name: "Delete", exact: true }));
+    const panel = screen.getByRole("complementary", { name: "Runs" });
+    await userEvent.click(panel.getByRole("button", { name: "Delete", exact: true }));
     await userEvent.click(page.getByRole("button", { name: "Delete task" }));
-    await vi.waitFor(() => expect(fixture.router.state.location.search).toEqual({}));
-    expect(commandSpy).toHaveBeenCalledWith("environment-data:server:scheduled-task:delete", {
-      id: task.id,
-    });
+    await vi.waitFor(() =>
+      expect(commandSpy).toHaveBeenCalledWith("environment-data:server:scheduled-task:delete", {
+        id: task.id,
+      }),
+    );
   });
 
-  it("pauses and resumes a task from its menu", async () => {
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+  it("pauses and resumes a task from its menu and from the runs panel", async () => {
+    await using _viewport = await viewport(1280);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
     using _organization = withOrganization();
     using fixture = createFixture({ task: { ...task, enabled: true } });
     await using screen = await renderWorkspace(fixture);
@@ -410,10 +531,19 @@ describe("Scheduled workspace", () => {
         { id: task.id, enabled: true },
       ),
     );
+
+    await userEvent.click(screen.getByRole("link", { name: /^Daily briefing/ }));
+    const panel = screen.getByRole("complementary", { name: "Runs" });
+    await userEvent.click(panel.getByRole("button", { name: "Resume", exact: true }));
+    await vi.waitFor(() => expect(commandSpy).toHaveBeenCalledTimes(3));
+    expect(commandSpy).toHaveBeenLastCalledWith(
+      "environment-data:server:scheduled-task:set-enabled",
+      { id: task.id, enabled: true },
+    );
   });
 
   it("offers Edit in the menu and no Pause for a completed one-time task", async () => {
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization({ pinnedTaskKeys: [taskKey] });
     using fixture = createFixture({
       task: { ...task, schedule: { type: "once", runAt: "2026-11-20T09:00:00.000Z" } },
@@ -429,7 +559,7 @@ describe("Scheduled workspace", () => {
 
   it("collapses the sidebar groups and remembers it in the client settings", async () => {
     using _organization = withOrganization({ collapsedGroups: ["completed"] });
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
     await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
@@ -459,7 +589,7 @@ describe("Scheduled workspace", () => {
 
   it("moves a task into a subsection, pins it and keeps both choices when reopening Scheduled", async () => {
     using _organization = withOrganization();
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
     await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
@@ -491,6 +621,46 @@ describe("Scheduled workspace", () => {
     await userEvent.click(screen.getByRole("button", { name: /^Support/ }).first());
     await expect.element(screen.getByRole("link", { name: "Daily briefing Paused" })).toBeVisible();
   });
+
+  it("keeps a pinned task, its state and its menu in the sidebar while Scheduled is collapsed", async () => {
+    await using _viewport = await viewport(1280);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
+    const other: ScheduledTask = { ...task, id: ScheduledTaskId.make("other"), title: "Weekly" };
+    using _organization = withOrganization({ pinnedTaskKeys: [taskKey], lastSeenAt: {} });
+    using fixture = createFixture({ task: { ...task, enabled: true } });
+    await act(() =>
+      fixture.registry.set(tasksAtom, [
+        { ...task, enabled: true, lastRunStatus: "running" },
+        other,
+      ]),
+    );
+    await using screen = await renderWorkspace(fixture);
+    const header = screen.getByRole("button", { name: "Scheduled", exact: true });
+    await expect.element(header).toHaveAttribute("aria-expanded", "false");
+    const pinned = screen.getByRole("link", { name: /^Daily briefing/ });
+    await expect.element(pinned).toBeVisible();
+    expect(pinned.element().querySelector(".border-info")).not.toBeNull();
+    await expect.element(screen.getByRole("link", { name: /^Weekly/ })).not.toBeInTheDocument();
+    // Only the hidden task flags the collapsed header.
+    expect(header.element().querySelector("[data-unread]")).not.toBeNull();
+
+    await act(() => fixture.registry.set(tasksAtom, [{ ...task, enabled: true }]));
+    await vi.waitFor(() => expect(pinned.element().querySelector("[data-unread]")).not.toBeNull());
+    expect(header.element().querySelector("[data-unread]")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Options for Daily briefing" }));
+    await expect.element(page.getByRole("menuitem", { name: "Unpin task" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(pinned);
+    await expect.element(screen.getByText("Chat for thread-b")).toBeVisible();
+    await expect.element(pinned).toHaveAttribute("aria-current", "page");
+    await vi.waitFor(() => expect(pinned.element().querySelector("[data-unread]")).toBeNull());
+    await expect.element(header).toHaveAttribute("aria-expanded", "false");
+  });
 });
 
 describe("Scheduled unread results", () => {
@@ -498,9 +668,9 @@ describe("Scheduled unread results", () => {
     link.element().querySelector("[data-unread]");
   const unseen = { lastSeenAt: {} };
 
-  it("marks a new result unread, reads it when the latest run is opened and unreads it after the next one", async () => {
+  it("marks a new result unread, reads it when the latest run's chat is opened and unreads it after the next one", async () => {
     await using _viewport = await viewport(1280);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization(unseen);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
@@ -511,7 +681,7 @@ describe("Scheduled unread results", () => {
     expect(getClientSettings().scheduledTaskOrganization.lastSeenAt).toEqual({});
 
     await userEvent.click(link);
-    await expect.element(screen.getByText("Output for second")).toBeVisible();
+    await expect.element(screen.getByText("Chat for thread-b")).toBeVisible();
     await vi.waitFor(() => expect(unreadDot(link)).toBeNull());
     expect(Object.keys(getClientSettings().scheduledTaskOrganization.lastSeenAt)).toEqual([
       taskKey,
@@ -524,24 +694,23 @@ describe("Scheduled unread results", () => {
     await vi.waitFor(() => expect(unreadDot(link)).not.toBeNull());
   });
 
-  it("keeps a result unread while an older run is open", async () => {
+  it("keeps a result unread while an older run's chat is open", async () => {
     await using _viewport = await viewport(1280);
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization(unseen);
-    using fixture = createFixture();
-    await fixture.router.navigate({
-      to: "/scheduled",
-      search: { environmentId, taskId: task.id, runId: older.runId },
-    });
+    using fixture = createFixture({ initialEntry: "/local/thread-a" });
     await using screen = await renderWorkspace(fixture);
-    await expect.element(screen.getByText("Output for first")).toBeVisible();
+    await expect.element(screen.getByText("Chat for thread-a")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await expect
+      .element(screen.getByRole("link", { name: /^Daily briefing/ }))
+      .toHaveAttribute("aria-current", "page");
     expect(unreadDot(screen.getByRole("link", { name: /^Daily briefing/ }))).not.toBeNull();
     expect(getClientSettings().scheduledTaskOrganization.lastSeenAt).toEqual({});
   });
 
   it("marks a task read and unread from its menu", async () => {
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization(unseen);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
@@ -563,7 +732,7 @@ describe("Scheduled unread results", () => {
   });
 
   it("labels a read failure and drops the label while it is unread", async () => {
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization();
     using fixture = createFixture({
       task: { ...task, enabled: true, lastRunStatus: "failed" },
@@ -582,7 +751,7 @@ describe("Scheduled unread results", () => {
   });
 
   it("counts unread tasks in a collapsed group and flags a collapsed Scheduled header", async () => {
-    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization({ ...unseen, collapsedGroups: [] });
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);

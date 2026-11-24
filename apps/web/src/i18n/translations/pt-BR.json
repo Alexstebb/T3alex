@@ -12807,10 +12807,6 @@
   "ad8d70fc9591fda9": "Este projeto já está vinculado a uma seção.",
   "d06e221c6221e5bb": "Não foi possível vincular a pasta.",
   "1b7d8063e15bd3aa": "Não foi possível iniciar uma conversa nesta seção",
-  "1fde224310c3e1d4": "Esta execução não está disponível",
-  "2b3dbce09b22fea1": "Carregando execução…",
-  "5ae1b346d834daa2": "Nenhuma resposta foi registrada para esta execução.",
-  "5ad82e31baa402ab": "Aguardando resposta…",
   "a657e657439ade3b": "Nova subseção",
   "4f29947f5d17a2d2": "Todas as tarefas",
   "5af9e8d3fdb0119c": "Opções de {section}",
@@ -12830,7 +12826,6 @@
   "7a6248bad175db37": "Conecte um ambiente para gerenciar tarefas agendadas.",
   "d3f29e19c4d5fc63": "Selecione uma tarefa agendada",
   "4cf381f54fcf28b7": "Carregando execuções…",
-  "79a9f95357c30e46": "Esta execução não está disponível",
   "be34fd580b388bc6": "Carregando execuções…",
   "92916d8bfa1904b1": "Nenhuma execução ainda",
   "94490c7706243363": "Agendadas",
@@ -12864,5 +12859,7 @@
   "4cbc7c43dd33c363": "Retomar",
   "da49b8271b9dffa0": "Excluir",
   "55c16b90d148827c": "Execuções",
-  "aba29e77e52bca46": "Excluir"
+  "aba29e77e52bca46": "Excluir",
+  "22a1b453858c6290": "Mostrar execuções",
+  "02e93b3c0befe178": "Ocultar execuções"
 }

@@ -12802,10 +12802,6 @@
   "ad8d70fc9591fda9": "Este proyecto ya está vinculado a una sección.",
   "d06e221c6221e5bb": "No se pudo vincular la carpeta.",
   "1b7d8063e15bd3aa": "No se pudo iniciar un chat en esta sección",
-  "1fde224310c3e1d4": "Esta ejecución no está disponible",
-  "2b3dbce09b22fea1": "Cargando ejecución…",
-  "5ae1b346d834daa2": "No se registró ninguna respuesta para esta ejecución.",
-  "5ad82e31baa402ab": "Esperando respuesta…",
   "a657e657439ade3b": "Nueva subsección",
   "4f29947f5d17a2d2": "Todas las tareas",
   "5af9e8d3fdb0119c": "Opciones de {section}",
@@ -12825,7 +12821,6 @@
   "7a6248bad175db37": "Conecta un entorno para gestionar tareas programadas.",
   "d3f29e19c4d5fc63": "Selecciona una tarea programada",
   "4cf381f54fcf28b7": "Cargando ejecuciones…",
-  "79a9f95357c30e46": "Esta ejecución no está disponible",
   "be34fd580b388bc6": "Cargando ejecuciones…",
   "92916d8bfa1904b1": "Todavía no hay ejecuciones",
   "94490c7706243363": "Programadas",
@@ -12859,5 +12854,7 @@
   "4cbc7c43dd33c363": "Reanudar",
   "da49b8271b9dffa0": "Eliminar",
   "55c16b90d148827c": "Ejecuciones",
-  "aba29e77e52bca46": "Eliminar"
+  "aba29e77e52bca46": "Eliminar",
+  "22a1b453858c6290": "Mostrar ejecuciones",
+  "02e93b3c0befe178": "Ocultar ejecuciones"
 }

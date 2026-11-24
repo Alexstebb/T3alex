@@ -12816,10 +12816,6 @@
   "ad8d70fc9591fda9": "This project is already linked to a section.",
   "d06e221c6221e5bb": "Could not link the folder.",
   "1b7d8063e15bd3aa": "Could not start a chat in this section",
-  "1fde224310c3e1d4": "This run is unavailable",
-  "2b3dbce09b22fea1": "Loading run…",
-  "5ae1b346d834daa2": "No response was recorded for this run.",
-  "5ad82e31baa402ab": "Waiting for a response…",
   "a657e657439ade3b": "New subsection",
   "4f29947f5d17a2d2": "All tasks",
   "5af9e8d3fdb0119c": "Options for {section}",
@@ -12839,7 +12835,6 @@
   "7a6248bad175db37": "Connect an environment to manage scheduled tasks.",
   "d3f29e19c4d5fc63": "Select a scheduled task",
   "4cf381f54fcf28b7": "Loading runs…",
-  "79a9f95357c30e46": "This run is unavailable",
   "be34fd580b388bc6": "Loading runs…",
   "92916d8bfa1904b1": "No runs yet",
   "94490c7706243363": "Scheduled",
@@ -12873,5 +12868,7 @@
   "4cbc7c43dd33c363": "Resume",
   "da49b8271b9dffa0": "Delete",
   "55c16b90d148827c": "Runs",
-  "aba29e77e52bca46": "Delete"
+  "aba29e77e52bca46": "Delete",
+  "22a1b453858c6290": "Show runs",
+  "02e93b3c0befe178": "Hide runs"
 }

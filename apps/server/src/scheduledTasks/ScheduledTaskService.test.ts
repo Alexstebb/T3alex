@@ -1354,11 +1354,17 @@ it.effect("lists the newest visible runs for one scheduled task with message anc
         ),
       ),
     );
-    const { runs } = yield* Effect.gen(function* () {
+    const { runs, byThread, unscheduled } = yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
-      return yield* service.listRuns({ id: taskId });
+      return {
+        ...(yield* service.listRuns({ id: taskId })),
+        byThread: yield* service.listRuns({ threadId: ThreadId.make("thread:history") }),
+        unscheduled: yield* service.listRuns({ threadId: ThreadId.make("thread:other") }),
+      };
     }).pipe(Effect.provide(layer));
 
+    assert.deepEqual(byThread, { taskId, runs });
+    assert.deepEqual(unscheduled, { taskId: null, runs: [] });
     assert.lengthOf(runs, 50);
     assert.deepEqual(runs[0], {
       runId: RunId.make("run:52"),

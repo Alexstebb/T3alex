@@ -12807,10 +12807,6 @@
   "ad8d70fc9591fda9": "Ce projet est déjà lié à une section.",
   "d06e221c6221e5bb": "Impossible de lier le dossier.",
   "1b7d8063e15bd3aa": "Impossible de démarrer une conversation dans cette section",
-  "1fde224310c3e1d4": "Cette exécution est indisponible",
-  "2b3dbce09b22fea1": "Chargement de l’exécution…",
-  "5ae1b346d834daa2": "Aucune réponse n’a été enregistrée pour cette exécution.",
-  "5ad82e31baa402ab": "En attente d’une réponse…",
   "a657e657439ade3b": "Nouvelle sous-section",
   "4f29947f5d17a2d2": "Toutes les tâches",
   "5af9e8d3fdb0119c": "Options pour {section}",
@@ -12830,7 +12826,6 @@
   "7a6248bad175db37": "Connectez un environnement pour gérer les tâches planifiées.",
   "d3f29e19c4d5fc63": "Sélectionnez une tâche planifiée",
   "4cf381f54fcf28b7": "Chargement des exécutions…",
-  "79a9f95357c30e46": "Cette exécution est indisponible",
   "be34fd580b388bc6": "Chargement des exécutions…",
   "92916d8bfa1904b1": "Aucune exécution pour le moment",
   "94490c7706243363": "Planifiées",
@@ -12864,5 +12859,7 @@
   "4cbc7c43dd33c363": "Reprendre",
   "da49b8271b9dffa0": "Supprimer",
   "55c16b90d148827c": "Exécutions",
-  "aba29e77e52bca46": "Supprimer"
+  "aba29e77e52bca46": "Supprimer",
+  "22a1b453858c6290": "Afficher les exécutions",
+  "02e93b3c0befe178": "Masquer les exécutions"
 }

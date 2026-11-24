@@ -1462,10 +1462,8 @@ export const layer = Layer.effect(
       `.pipe(Effect.asVoid, Effect.ignore),
     );
 
-    const listRuns: ScheduledTaskService["Service"]["listRuns"] = (input) =>
-      ensureRunLookupIndex.pipe(
-        Effect.andThen(() =>
-          sql<ScheduledTaskRunsResult["runs"][number]>`
+    const listTaskRuns = (taskId: ScheduledTaskId) =>
+      sql<ScheduledTaskRunsResult["runs"][number]>`
         SELECT
           run.run_id AS "runId",
           run.thread_id AS "threadId",
@@ -1486,20 +1484,47 @@ export const layer = Layer.effect(
         INNER JOIN orchestration_v2_projection_threads AS thread
           ON thread.thread_id = run.thread_id AND thread.deleted_at IS NULL
         WHERE CASE WHEN json_valid(input.payload_json)
-          THEN json_extract(input.payload_json, '$.scheduledTaskId') END = ${input.id}
+          THEN json_extract(input.payload_json, '$.scheduledTaskId') END = ${taskId}
           AND CASE WHEN json_valid(input.payload_json)
             THEN json_type(input.payload_json, '$.scheduledTaskId') END IS NOT NULL
         ORDER BY run.requested_at DESC, run.run_id DESC
         LIMIT 50
+      `.pipe(NodeSqliteClient.readOnly);
+
+    // Local fork: lets a client find the task behind the chat it has open.
+    const latestTaskInThread = (threadId: ThreadId) =>
+      sql<{ readonly taskId: ScheduledTaskId }>`
+        SELECT json_extract(payload_json, '$.scheduledTaskId') AS "taskId"
+        FROM orchestration_v2_projection_messages
+        WHERE thread_id = ${threadId}
+          AND CASE WHEN json_valid(payload_json)
+            THEN json_type(payload_json, '$.scheduledTaskId') END IS NOT NULL
+        ORDER BY created_at DESC, message_id DESC
+        LIMIT 1
       `.pipe(
-            NodeSqliteClient.readOnly,
-            Effect.map((runs) => ({ runs })),
-            Effect.mapError((cause) =>
-              taskError("Could not list schedule task runs.", { taskId: input.id, cause }),
-            ),
+        NodeSqliteClient.readOnly,
+        Effect.map((rows) => rows[0]?.taskId ?? null),
+      );
+
+    const listRuns: ScheduledTaskService["Service"]["listRuns"] = Effect.fn(
+      "ScheduledTaskService.listRuns",
+    )(
+      function* (input) {
+        yield* ensureRunLookupIndex;
+        const taskId = "id" in input ? input.id : yield* latestTaskInThread(input.threadId);
+        const runs = taskId === null ? [] : yield* listTaskRuns(taskId);
+        return { taskId, runs } satisfies ScheduledTaskRunsResult;
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError((cause) =>
+            taskError("Could not list schedule task runs.", {
+              ...("id" in input ? { taskId: input.id } : {}),
+              cause,
+            }),
           ),
         ),
-      );
+    );
 
     const subscribeRuns: ScheduledTaskService["Service"]["subscribeRuns"] = (input) =>
       Stream.unwrap(

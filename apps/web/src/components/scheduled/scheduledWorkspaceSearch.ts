@@ -1,9 +1,8 @@
-import { EnvironmentId, RunId, ScheduledTaskId } from "@t3tools/contracts";
+import { EnvironmentId, ScheduledTaskId } from "@t3tools/contracts";
 
 interface ScheduledWorkspaceSearch {
   readonly environmentId?: EnvironmentId;
   readonly taskId?: ScheduledTaskId;
-  readonly runId?: RunId;
 }
 
 export function validateScheduledWorkspaceSearch(
@@ -17,9 +16,5 @@ export function validateScheduledWorkspaceSearch(
     typeof raw.taskId === "string" && raw.taskId.trim()
       ? ScheduledTaskId.make(raw.taskId)
       : undefined;
-  if (environmentId === undefined || taskId === undefined) return {};
-
-  const runId =
-    typeof raw.runId === "string" && raw.runId.trim() ? RunId.make(raw.runId) : undefined;
-  return { environmentId, taskId, ...(runId === undefined ? {} : { runId }) };
+  return environmentId === undefined || taskId === undefined ? {} : { environmentId, taskId };
 }

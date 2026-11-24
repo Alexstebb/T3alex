@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useGT, useLocale } from "gt-react";
 import {
   CalendarIcon,
@@ -35,6 +35,7 @@ import {
   useClientSettingsHydrated,
 } from "../../hooks/useSettings";
 import { cn, randomUUID } from "../../lib/utils";
+import { isScheduledWorkspacePath } from "../sidebar/mainAppLocation";
 import { Button } from "../ui/button";
 import { Dialog, DialogClose, DialogFooter, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -131,6 +132,8 @@ function runAtMs(task: ScheduledTask) {
 export function ScheduledTaskNavigation(props: {
   readonly rows: readonly ScheduledTaskNavigationRow[];
   readonly selectedKey: string | null;
+  /** Only the pinned tasks, without their heading, for the collapsed Scheduled group. */
+  readonly pinnedOnly?: boolean;
   readonly creatingSection: boolean;
   readonly onCloseCreateSection: () => void;
   readonly onSelect: () => void;
@@ -221,6 +224,14 @@ export function ScheduledTaskNavigation(props: {
       }
     />
   );
+
+  if (props.pinnedOnly) {
+    return pinnedRows.length === 0 ? null : (
+      <div className="ml-3 space-y-0.5 border-l border-sidebar-border py-1 pl-1.5">
+        {pinnedRows.map(renderTask)}
+      </div>
+    );
+  }
 
   return (
     <div className="border-l border-sidebar-border ml-3 pl-1.5">
@@ -432,7 +443,7 @@ function ScheduledTaskNavigationItem(props: {
   readonly onMove: (sectionId: string | null) => void;
 }) {
   const gt = useGT();
-  const navigate = useNavigate();
+  const router = useRouter();
   const { task, environmentId } = props.row;
   const actions = useScheduledTaskActions(environmentId);
   const [editing, setEditing] = useState(false);
@@ -560,8 +571,10 @@ function ScheduledTaskNavigationItem(props: {
           task={task}
           onClose={() => setDeleting(false)}
           onDelete={async () => {
-            if ((await actions.deleteTask(task)) && props.selected) {
-              void navigate({ to: "/scheduled", search: {} });
+            // A run's chat stays open; only the task's own page goes away with it.
+            const onTaskPage = isScheduledWorkspacePath(router.state.location.pathname);
+            if ((await actions.deleteTask(task)) && props.selected && onTaskPage) {
+              void router.navigate({ to: "/scheduled", search: {} });
             }
           }}
         />

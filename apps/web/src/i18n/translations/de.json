@@ -12807,10 +12807,6 @@
   "ad8d70fc9591fda9": "Dieses Projekt ist bereits mit einem Abschnitt verknüpft.",
   "d06e221c6221e5bb": "Der Ordner konnte nicht verknüpft werden.",
   "1b7d8063e15bd3aa": "Der Chat konnte in diesem Abschnitt nicht gestartet werden",
-  "1fde224310c3e1d4": "Dieser Lauf ist nicht verfügbar",
-  "2b3dbce09b22fea1": "Lauf wird geladen…",
-  "5ae1b346d834daa2": "Für diesen Lauf wurde keine Antwort erfasst.",
-  "5ad82e31baa402ab": "Antwort wird erwartet…",
   "a657e657439ade3b": "Neuer Unterabschnitt",
   "4f29947f5d17a2d2": "Alle Aufgaben",
   "5af9e8d3fdb0119c": "Optionen für {section}",
@@ -12830,7 +12826,6 @@
   "7a6248bad175db37": "Verbinde eine Umgebung, um geplante Aufgaben zu verwalten.",
   "d3f29e19c4d5fc63": "Geplante Aufgabe auswählen",
   "4cf381f54fcf28b7": "Ausführungen werden geladen…",
-  "79a9f95357c30e46": "Dieser Lauf ist nicht verfügbar",
   "be34fd580b388bc6": "Ausführungen werden geladen…",
   "92916d8bfa1904b1": "Noch keine Ausführungen",
   "94490c7706243363": "Geplant",
@@ -12864,5 +12859,7 @@
   "4cbc7c43dd33c363": "Fortsetzen",
   "da49b8271b9dffa0": "Löschen",
   "55c16b90d148827c": "Ausführungen",
-  "aba29e77e52bca46": "Löschen"
+  "aba29e77e52bca46": "Löschen",
+  "22a1b453858c6290": "Ausführungen anzeigen",
+  "02e93b3c0befe178": "Ausführungen ausblenden"
 }

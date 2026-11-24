@@ -8,6 +8,7 @@ import { resolveThreadRouteTarget } from "../threadRoutes";
 import { retainThreadFindForRoute } from "../components/chat/threadFindStore";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
 import { useShownThreadRouteTarget } from "../hooks/useShownThreadRouteTarget";
+import { ScheduledThreadPanel } from "../components/scheduled/ScheduledThreadPanel";
 
 function ChatRouteLayout() {
   // Render both routes here so draft promotion keeps the same ChatView mounted.
@@ -24,6 +25,10 @@ function ChatRouteLayout() {
       ) : (
         <Outlet />
       )}
+      {/* Local fork: a scheduled task's runs beside the chat of one of its runs. */}
+      {shownTarget?.kind === "server" && !modalOpen ? (
+        <ScheduledThreadPanel threadRef={shownTarget.threadRef} />
+      ) : null}
       {modalOpen ? <Outlet /> : null}
       <GlobalVoiceInputIndicator hidden={modalOpen} />
     </>

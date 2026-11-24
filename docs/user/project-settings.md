@@ -86,9 +86,11 @@ branch name remains.
 ## Scheduled tasks
 
 On desktop and web, expand **Scheduled** in the main sidebar. Use sections to
-group tasks and pin the ones you open often. Selecting a task follows its
-latest run. Pick an older run in **Runs** to review that result, or select the
-task again to return to its latest run.
+group tasks and pin the ones you open often; pinned tasks stay in the sidebar
+even when **Scheduled** is collapsed. Selecting a task opens the chat of its
+latest run, where you can keep talking to the agent. **Runs** beside the chat
+lists the task's other runs and its actions; pick a run to open its chat, or
+select the task again to return to its latest run.
 
 On mobile, open **Settings → Scheduled tasks** to create or manage
 ones across your connected environments. Use the settings filter to narrow the

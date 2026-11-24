@@ -8,6 +8,7 @@ import { memo, useId, useState } from "react";
 import { useLocalStorage, writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useThreadRouteRef } from "../../hooks/useThreadRouteTarget";
 import { cn } from "../../lib/utils";
 import { isScheduledWorkspacePath } from "../sidebar/mainAppLocation";
 import { Button } from "../ui/button";
@@ -16,6 +17,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ScheduledTaskNavigation } from "./ScheduledTaskNavigation";
 import { hasUnreadScheduledTask, scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
 import { validateScheduledWorkspaceSearch } from "./scheduledWorkspaceSearch";
+import { useScheduledThreadTask } from "./useScheduledThreadTask";
 import { useScheduledWorkspaceTasks } from "./useScheduledWorkspaceTasks";
 
 export const SCHEDULED_SIDEBAR_COLLAPSED_KEY = "t3code:scheduled-sidebar:collapsed";
@@ -36,10 +38,22 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
   );
   const [creatingSection, setCreatingSection] = useState(false);
   const { isMobile, setOpenMobile } = useSidebar();
-  const { rows } = useScheduledWorkspaceTasks();
+  const { rows, sources, isReady } = useScheduledWorkspaceTasks();
   const organization = useClientSettings(selectOrganization);
   const nowMinute = useNowMinute();
-  const hasUnread = hasUnreadScheduledTask(rows, organization, Date.parse(nowMinute));
+  const selectedKey = useSelectedScheduledTaskKey();
+  const loading = !isReady || sources.some(({ data, error }) => data === null && error === null);
+  // Pinned tasks stay listed while collapsed, so only the hidden ones flag the header.
+  const hiddenRows = rows.filter(
+    (row) =>
+      !organization.pinnedTaskKeys.includes(
+        scheduledTaskOrganizationKey(row.environmentId, row.task.id),
+      ),
+  );
+  const hasUnread = hasUnreadScheduledTask(hiddenRows, organization, Date.parse(nowMinute));
+  const closeMobileSidebar = () => {
+    if (isMobile) setOpenMobile(false);
+  };
 
   return (
     <section className="mb-2">
@@ -119,26 +133,49 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
           </>
         ) : null}
       </div>
+      {collapsed ? (
+        <ScheduledTaskNavigation
+          rows={rows}
+          selectedKey={selectedKey}
+          pinnedOnly
+          creatingSection={false}
+          onCloseCreateSection={() => undefined}
+          loading={loading}
+          onSelect={closeMobileSidebar}
+        />
+      ) : null}
       <div id={contentId} hidden={collapsed}>
         {collapsed ? null : (
-          <ScheduledSidebarContents
-            creatingSection={creatingSection}
-            onCloseCreateSection={() => setCreatingSection(false)}
-          />
+          <>
+            <ScheduledTaskNavigation
+              rows={rows}
+              selectedKey={selectedKey}
+              creatingSection={creatingSection}
+              onCloseCreateSection={() => setCreatingSection(false)}
+              loading={loading}
+              onSelect={closeMobileSidebar}
+            />
+            {sources.map(({ environment, error }) =>
+              error === null ? null : (
+                <p
+                  key={environment.environmentId}
+                  role="status"
+                  className="px-3 py-2 text-xs text-destructive"
+                >
+                  {environment.label} · {error}
+                </p>
+              ),
+            )}
+          </>
         )}
       </div>
     </section>
   );
 });
 
-function ScheduledSidebarContents({
-  creatingSection,
-  onCloseCreateSection,
-}: {
-  readonly creatingSection: boolean;
-  readonly onCloseCreateSection: () => void;
-}) {
-  const selectedKey = useLocation({
+/** The task page's task, or the task whose run the open chat belongs to. */
+function useSelectedScheduledTaskKey() {
+  const pageKey = useLocation({
     select: (location) => {
       if (!isScheduledWorkspacePath(location.pathname)) return null;
       const { environmentId, taskId } = validateScheduledWorkspaceSearch(location.search);
@@ -147,33 +184,6 @@ function ScheduledSidebarContents({
         : null;
     },
   });
-  const { isMobile, setOpenMobile } = useSidebar();
-  const { rows, sources, isReady } = useScheduledWorkspaceTasks();
-  const loading = !isReady || sources.some(({ data, error }) => data === null && error === null);
-
-  return (
-    <>
-      <ScheduledTaskNavigation
-        rows={rows}
-        selectedKey={selectedKey}
-        creatingSection={creatingSection}
-        onCloseCreateSection={onCloseCreateSection}
-        loading={loading}
-        onSelect={() => {
-          if (isMobile) setOpenMobile(false);
-        }}
-      />
-      {sources.map(({ environment, error }) =>
-        error === null ? null : (
-          <p
-            key={environment.environmentId}
-            role="status"
-            className="px-3 py-2 text-xs text-destructive"
-          >
-            {environment.label} · {error}
-          </p>
-        ),
-      )}
-    </>
-  );
+  const { row } = useScheduledThreadTask(useThreadRouteRef());
+  return pageKey ?? (row ? scheduledTaskOrganizationKey(row.environmentId, row.task.id) : null);
 }

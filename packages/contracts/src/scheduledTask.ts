@@ -307,9 +307,11 @@ export const ScheduledTaskListResult = Schema.Struct({
 });
 export type ScheduledTaskListResult = typeof ScheduledTaskListResult.Type;
 
-export const ScheduledTaskRunsInput = Schema.Struct({
-  id: ScheduledTaskId,
-});
+/** A task's runs, or by `threadId` the runs of the task whose latest run went to that thread. */
+export const ScheduledTaskRunsInput = Schema.Union([
+  Schema.Struct({ id: ScheduledTaskId }),
+  Schema.Struct({ threadId: ThreadId }),
+]);
 export type ScheduledTaskRunsInput = typeof ScheduledTaskRunsInput.Type;
 
 export const ScheduledTaskRun = Schema.Struct({
@@ -323,6 +325,8 @@ export const ScheduledTaskRun = Schema.Struct({
 export type ScheduledTaskRun = typeof ScheduledTaskRun.Type;
 
 export const ScheduledTaskRunsResult = Schema.Struct({
+  /** Null when a `threadId` lookup found no scheduled run in that thread. */
+  taskId: Schema.NullOr(ScheduledTaskId),
   runs: ForwardCompatibleArray(ScheduledTaskRun),
 });
 export type ScheduledTaskRunsResult = typeof ScheduledTaskRunsResult.Type;

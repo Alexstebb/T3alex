@@ -12814,10 +12814,6 @@
   "ad8d70fc9591fda9": "Det här projektet är redan länkat till en sektion.",
   "d06e221c6221e5bb": "Det gick inte att länka mappen.",
   "1b7d8063e15bd3aa": "Det gick inte att starta en chatt i den här sektionen",
-  "1fde224310c3e1d4": "Den här körningen är inte tillgänglig",
-  "2b3dbce09b22fea1": "Läser in körning…",
-  "5ae1b346d834daa2": "Inget svar sparades för den här körningen.",
-  "5ad82e31baa402ab": "Väntar på svar…",
   "a657e657439ade3b": "Ny undersektion",
   "4f29947f5d17a2d2": "Alla uppgifter",
   "5af9e8d3fdb0119c": "Alternativ för {section}",
@@ -12837,7 +12833,6 @@
   "7a6248bad175db37": "Anslut en miljö för att hantera schemalagda uppgifter.",
   "d3f29e19c4d5fc63": "Välj en schemalagd uppgift",
   "4cf381f54fcf28b7": "Läser in körningar…",
-  "79a9f95357c30e46": "Den här körningen är inte tillgänglig",
   "be34fd580b388bc6": "Läser in körningar…",
   "92916d8bfa1904b1": "Inga körningar ännu",
   "94490c7706243363": "Schemalagt",
@@ -12871,5 +12866,7 @@
   "4cbc7c43dd33c363": "Återuppta",
   "da49b8271b9dffa0": "Ta bort",
   "55c16b90d148827c": "Körningar",
-  "aba29e77e52bca46": "Ta bort"
+  "aba29e77e52bca46": "Ta bort",
+  "22a1b453858c6290": "Visa körningar",
+  "02e93b3c0befe178": "Dölj körningar"
 }
