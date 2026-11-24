@@ -12840,12 +12840,9 @@
   "d3f29e19c4d5fc63": "Select a scheduled task",
   "4cf381f54fcf28b7": "Loading runs…",
   "79a9f95357c30e46": "This run is unavailable",
-  "f92b760c3e84728a": "No runs yet",
-  "55c16b90d148827c": "Runs",
   "be34fd580b388bc6": "Loading runs…",
   "92916d8bfa1904b1": "No runs yet",
   "94490c7706243363": "Scheduled",
-  "d4b3fe97dd0501a8": "Instructions",
   "3a6f5b2f8819680f": "New chat in {section}",
   "813dd5c62ff8e1ed": "Section options for {section}",
   "74f489e47ca59e05": "Rename section",
@@ -12866,5 +12863,6 @@
   "cd9e0573b4527cba": "Not started",
   "a2ddfe4453ba1106": "Extra run time {number}",
   "dbe33dd9ef0750bb": "Remove run time {time}",
-  "9120e3146a9ec407": "Add run time"
+  "9120e3146a9ec407": "Add run time",
+  "cb6af3b1f18e1069": "Back to runs"
 }

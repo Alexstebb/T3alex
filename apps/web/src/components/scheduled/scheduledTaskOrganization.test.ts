@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentId, ScheduledTask, ScheduledTaskId } from "@t3tools/contracts";
@@ -11,12 +12,16 @@ import {
   moveScheduledTaskToSection,
   removeScheduledTaskSection,
   scheduledTaskOrganizationKey,
+  toggleScheduledTaskGroup,
   toggleScheduledTaskPin,
-  type ScheduledTaskOrganization,
+  ScheduledTaskOrganization,
 } from "./scheduledTaskOrganization";
+
+const decodeOrganization = Schema.decodeUnknownSync(ScheduledTaskOrganization);
 
 const organization: ScheduledTaskOrganization = {
   pinnedTaskKeys: [],
+  collapsedGroups: ["completed"],
   sections: [
     { id: "morning", name: "Morning", collapsed: false, taskKeys: ["task-a"] },
     { id: "follow-up", name: "Follow-up", collapsed: false, taskKeys: [] },
@@ -50,8 +55,24 @@ describe("scheduled task organization", () => {
     const pinned = toggleScheduledTaskPin(organization, "task-a");
     expect(removeScheduledTaskSection(pinned, "morning")).toEqual({
       pinnedTaskKeys: ["task-a"],
+      collapsedGroups: ["completed"],
       sections: [organization.sections[1]],
     });
+  });
+
+  it("collapses and reopens a group without touching the rest", () => {
+    const collapsed = toggleScheduledTaskGroup(organization, "all");
+    expect(collapsed.collapsedGroups).toEqual(["completed", "all"]);
+    expect(toggleScheduledTaskGroup(collapsed, "completed").collapsedGroups).toEqual(["all"]);
+    expect(collapsed.sections).toBe(organization.sections);
+  });
+
+  it("decodes saved organizations without collapsed groups as collapsing Completed only", () => {
+    const decoded = decodeOrganization({
+      pinnedTaskKeys: [],
+      sections: [],
+    });
+    expect(decoded.collapsedGroups).toEqual(["completed"]);
   });
 
   it("keeps the shared empty organization immutable", () => {

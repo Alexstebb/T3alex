@@ -10,9 +10,14 @@ import {
   PinIcon,
   PinOffIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
-import type { ClientSettings, EnvironmentId, ScheduledTask } from "@t3tools/contracts";
+import type {
+  ClientSettings,
+  EnvironmentId,
+  ScheduledTask,
+  ScheduledTaskGroupId,
+} from "@t3tools/contracts";
 
 import { getLocalStorageItem, removeLocalStorageItem } from "../../hooks/useLocalStorage";
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -45,6 +50,7 @@ import {
   ScheduledTaskOrganization,
   scheduledTaskOrganizationKey,
   scheduledTaskState,
+  toggleScheduledTaskGroup,
   toggleScheduledTaskPin,
   type ScheduledTaskSection,
 } from "./scheduledTaskOrganization";
@@ -117,7 +123,6 @@ export function ScheduledTaskNavigation(props: {
 }) {
   const gt = useGT();
   const [organization, setOrganization] = useScheduledTaskOrganization();
-  const [completedOpen, setCompletedOpen] = useState(false);
   const nowMinute = useNowMinute();
   const [renamingSection, setRenamingSection] = useState<ScheduledTaskSection>();
   const nameDialog = props.creatingSection ? null : renamingSection;
@@ -168,6 +173,12 @@ export function ScheduledTaskNavigation(props: {
     closeNameDialog();
   };
 
+  const groupProps = (id: ScheduledTaskGroupId, count: number) => ({
+    count,
+    collapsed: organization.collapsedGroups.includes(id),
+    onToggle: () => setOrganization((current) => toggleScheduledTaskGroup(current, id)),
+  });
+
   const renderTask = ({ key, row }: { key: string; row: ScheduledTaskNavigationRow }) => (
     <ScheduledTaskNavigationItem
       key={key}
@@ -188,7 +199,11 @@ export function ScheduledTaskNavigation(props: {
     <div className="border-l border-sidebar-border ml-3 pl-1.5">
       <div className="space-y-px py-1">
         {pinnedRows.length > 0 ? (
-          <ScheduledNavigationGroup title={gt("Pinned")} icon={<PinIcon />}>
+          <ScheduledNavigationGroup
+            title={gt("Pinned")}
+            icon={<PinIcon />}
+            {...groupProps("pinned", pinnedRows.length)}
+          >
             {pinnedRows.map(renderTask)}
           </ScheduledNavigationGroup>
         ) : null}
@@ -224,39 +239,33 @@ export function ScheduledTaskNavigation(props: {
         })}
 
         {automatic.upcoming.length > 0 ? (
-          <ScheduledNavigationGroup title={gt("Upcoming")} icon={<CalendarIcon />}>
+          <ScheduledNavigationGroup
+            title={gt("Upcoming")}
+            icon={<CalendarIcon />}
+            {...groupProps("upcoming", automatic.upcoming.length)}
+          >
             {automatic.upcoming.map(renderTask)}
           </ScheduledNavigationGroup>
         ) : null}
 
         {automatic.all.length > 0 ? (
-          <ScheduledNavigationGroup title={gt("All tasks")} icon={<LayersIcon />}>
+          <ScheduledNavigationGroup
+            title={gt("All tasks")}
+            icon={<LayersIcon />}
+            {...groupProps("all", automatic.all.length)}
+          >
             {automatic.all.map(renderTask)}
           </ScheduledNavigationGroup>
         ) : null}
 
         {automatic.completed.length > 0 ? (
-          <section className="mb-3">
-            <button
-              type="button"
-              aria-expanded={completedOpen}
-              onClick={() => setCompletedOpen((open) => !open)}
-              className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>svg]:size-3.5"
-            >
-              <CircleCheckIcon aria-hidden />
-              <span className="min-w-0 flex-1">{gt("Completed")}</span>
-              {completedOpen ? null : (
-                <span className="tabular-nums">{automatic.completed.length}</span>
-              )}
-              <ChevronDownIcon
-                aria-hidden
-                className={cn("transition-transform", !completedOpen && "-rotate-90")}
-              />
-            </button>
-            {completedOpen ? (
-              <div className="space-y-0.5">{automatic.completed.map(renderTask)}</div>
-            ) : null}
-          </section>
+          <ScheduledNavigationGroup
+            title={gt("Completed")}
+            icon={<CircleCheckIcon />}
+            {...groupProps("completed", automatic.completed.length)}
+          >
+            {automatic.completed.map(renderTask)}
+          </ScheduledNavigationGroup>
         ) : null}
 
         {props.rows.length === 0 ? (
@@ -280,15 +289,34 @@ export function ScheduledTaskNavigation(props: {
 function ScheduledNavigationGroup(props: {
   readonly title: string;
   readonly icon: React.ReactNode;
+  readonly count: number;
+  readonly collapsed: boolean;
+  readonly onToggle: () => void;
   readonly children: React.ReactNode;
 }) {
+  const contentId = useId();
   return (
     <section className="mb-3">
-      <div className="flex h-7 items-center gap-2 px-2 text-xs font-medium text-sidebar-muted-foreground [&>svg]:size-3.5">
-        {props.icon}
-        <h2>{props.title}</h2>
+      <h2>
+        <button
+          type="button"
+          aria-expanded={!props.collapsed}
+          aria-controls={contentId}
+          onClick={props.onToggle}
+          className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>svg]:size-3.5"
+        >
+          {props.icon}
+          <span className="min-w-0 flex-1 truncate">{props.title}</span>
+          {props.collapsed ? <span className="tabular-nums">{props.count}</span> : null}
+          <ChevronDownIcon
+            aria-hidden
+            className={cn("transition-transform", props.collapsed && "-rotate-90")}
+          />
+        </button>
+      </h2>
+      <div id={contentId} hidden={props.collapsed} className="space-y-0.5">
+        {props.collapsed ? null : props.children}
       </div>
-      <div className="space-y-0.5">{props.children}</div>
     </section>
   );
 }

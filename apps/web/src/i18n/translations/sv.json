@@ -12838,12 +12838,9 @@
   "d3f29e19c4d5fc63": "Välj en schemalagd uppgift",
   "4cf381f54fcf28b7": "Läser in körningar…",
   "79a9f95357c30e46": "Den här körningen är inte tillgänglig",
-  "f92b760c3e84728a": "Inga körningar ännu",
-  "55c16b90d148827c": "Körningar",
   "be34fd580b388bc6": "Läser in körningar…",
   "92916d8bfa1904b1": "Inga körningar ännu",
   "94490c7706243363": "Schemalagt",
-  "d4b3fe97dd0501a8": "Instruktioner",
   "3a6f5b2f8819680f": "Ny chatt i {section}",
   "813dd5c62ff8e1ed": "Sektionsalternativ för {section}",
   "74f489e47ca59e05": "Byt namn på sektionen",
@@ -12864,5 +12861,6 @@
   "cd9e0573b4527cba": "Inte startad",
   "a2ddfe4453ba1106": "Extra körtid {number}",
   "dbe33dd9ef0750bb": "Ta bort körtiden {time}",
-  "9120e3146a9ec407": "Lägg till körtid"
+  "9120e3146a9ec407": "Lägg till körtid",
+  "cb6af3b1f18e1069": "Tillbaka till körningarna"
 }

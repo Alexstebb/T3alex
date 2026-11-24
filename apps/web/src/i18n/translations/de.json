@@ -12831,12 +12831,9 @@
   "d3f29e19c4d5fc63": "Geplante Aufgabe auswählen",
   "4cf381f54fcf28b7": "Ausführungen werden geladen…",
   "79a9f95357c30e46": "Dieser Lauf ist nicht verfügbar",
-  "f92b760c3e84728a": "Noch keine Ausführungen",
-  "55c16b90d148827c": "Ausführungen",
   "be34fd580b388bc6": "Ausführungen werden geladen…",
   "92916d8bfa1904b1": "Noch keine Ausführungen",
   "94490c7706243363": "Geplant",
-  "d4b3fe97dd0501a8": "Anweisungen",
   "3a6f5b2f8819680f": "Neuer Chat in {section}",
   "813dd5c62ff8e1ed": "Abschnittsoptionen für {section}",
   "74f489e47ca59e05": "Abschnitt umbenennen",
@@ -12857,5 +12854,6 @@
   "cd9e0573b4527cba": "Nicht gestartet",
   "a2ddfe4453ba1106": "Weitere Ausführungszeit {number}",
   "dbe33dd9ef0750bb": "Ausführungszeit {time} entfernen",
-  "9120e3146a9ec407": "Ausführungszeit hinzufügen"
+  "9120e3146a9ec407": "Ausführungszeit hinzufügen",
+  "cb6af3b1f18e1069": "Zurück zu den Ausführungen"
 }

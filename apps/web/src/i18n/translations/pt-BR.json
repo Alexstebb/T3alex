@@ -12831,12 +12831,9 @@
   "d3f29e19c4d5fc63": "Selecione uma tarefa agendada",
   "4cf381f54fcf28b7": "Carregando execuções…",
   "79a9f95357c30e46": "Esta execução não está disponível",
-  "f92b760c3e84728a": "Nenhuma execução ainda",
-  "55c16b90d148827c": "Execuções",
   "be34fd580b388bc6": "Carregando execuções…",
   "92916d8bfa1904b1": "Nenhuma execução ainda",
   "94490c7706243363": "Agendadas",
-  "d4b3fe97dd0501a8": "Instruções",
   "3a6f5b2f8819680f": "Nova conversa em {section}",
   "813dd5c62ff8e1ed": "Opções da seção {section}",
   "74f489e47ca59e05": "Renomear seção",
@@ -12857,5 +12854,6 @@
   "cd9e0573b4527cba": "Não iniciada",
   "a2ddfe4453ba1106": "Horário de execução adicional {number}",
   "dbe33dd9ef0750bb": "Remover horário de execução {time}",
-  "9120e3146a9ec407": "Adicionar horário de execução"
+  "9120e3146a9ec407": "Adicionar horário de execução",
+  "cb6af3b1f18e1069": "Voltar para as execuções"
 }

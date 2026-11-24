@@ -140,6 +140,12 @@ function createWorkspaceRouter() {
   });
 }
 
+async function wideViewport() {
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(1280, 800);
+  return { [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height) };
+}
+
 function isolateLocalStorage(key: string) {
   const previous = localStorage.getItem(key);
   localStorage.removeItem(key);
@@ -152,13 +158,13 @@ function isolateLocalStorage(key: string) {
 }
 
 describe("Scheduled workspace", () => {
-  it("opens from the sidebar, follows new runs and keeps an explicitly selected older run", async () => {
+  it("opens a task on its run list, shows a run's output beside it and keeps that run when new ones arrive", async () => {
     readWorkspaceTasks.mockClear();
+    await using _viewport = await wideViewport();
     using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     const older = run("first", "2026-11-19T09:00:00.000Z");
     const latest = run("second", "2026-11-20T09:00:00.000Z");
     const next = run("third", "2026-11-21T09:00:00.000Z");
-    const newest = run("fourth", "2026-11-22T09:00:00.000Z");
     const registry = AtomRegistry.make();
     using _history = { [Symbol.dispose]: registry.mount(resultAtom) };
     registry.set(resultAtom, AsyncResult.success({ runs: [latest, older] }));
@@ -184,9 +190,16 @@ describe("Scheduled workspace", () => {
     expect(router.state.location.pathname).toBe("/");
     const originalGroup = group.element();
     await userEvent.click(screen.getByRole("link", { name: "Daily briefing Paused" }));
-    await expect.element(screen.getByText("Output for second")).toBeVisible();
+
+    const history = screen.getByRole("complementary", { name: "Runs" });
+    await expect.element(history.getByRole("button", { name: /Completed/ }).first()).toBeVisible();
+    await expect.element(screen.getByText(/^Output for/)).not.toBeInTheDocument();
+    expect(router.state.location.search).not.toHaveProperty("runId");
     expect(group.element()).toBe(originalGroup);
-    await expect.element(screen.getByRole("link", { name: "Chats" })).toBeVisible();
+
+    await userEvent.click(history.getByRole("button", { name: /Completed/ }).first());
+    await expect.element(screen.getByText("Output for second")).toBeVisible();
+    expect(router.state.location.search).toMatchObject({ runId: "second" });
     await userEvent.click(group);
     await expect
       .element(screen.getByRole("link", { name: "Daily briefing Paused" }))
@@ -194,18 +207,63 @@ describe("Scheduled workspace", () => {
     await expect.element(screen.getByText("Output for second")).toBeVisible();
     await userEvent.click(group);
 
-    const history = screen.getByRole("complementary", { name: "Runs" });
     await userEvent.click(history.getByRole("button", { name: /Completed/ }).last());
     await expect.element(screen.getByText("Output for first")).toBeVisible();
-
     await act(() => registry.set(resultAtom, AsyncResult.success({ runs: [next, latest, older] })));
     await expect.element(screen.getByText("Output for first")).toBeVisible();
-    await userEvent.click(screen.getByRole("link", { name: "Daily briefing Paused" }));
-    await expect.element(screen.getByText("Output for third")).toBeVisible();
-    await act(() =>
-      registry.set(resultAtom, AsyncResult.success({ runs: [newest, next, latest, older] })),
+    await vi.waitFor(() =>
+      expect(history.getByRole("button", { name: /Completed/ }).elements()).toHaveLength(3),
     );
-    await expect.element(screen.getByText("Output for fourth")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("link", { name: "Daily briefing Paused" }));
+    await expect.element(screen.getByText(/^Output for/)).not.toBeInTheDocument();
+    expect(router.state.location.search).not.toHaveProperty("runId");
+  });
+
+  it("collapses the sidebar groups and remembers it in the client settings", async () => {
+    const previousSettings = getClientSettings();
+    using _organization = {
+      [Symbol.dispose]: () => __setClientSettingsForTests(previousSettings),
+    };
+    __setClientSettingsForTests({
+      ...previousSettings,
+      scheduledTaskOrganization: {
+        pinnedTaskKeys: [],
+        sections: [],
+        collapsedGroups: ["completed"],
+      },
+    });
+    using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    const router = createWorkspaceRouter();
+    await using screen = await render(
+      <SidebarProvider>
+        <RouterProvider router={router} />
+      </SidebarProvider>,
+      { router: false },
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    const allTasks = screen.getByRole("button", { name: /^All tasks/ });
+    await expect.element(allTasks).toHaveAttribute("aria-expanded", "true");
+    await expect.element(screen.getByRole("link", { name: "Daily briefing Paused" })).toBeVisible();
+
+    await userEvent.click(allTasks);
+    await expect.element(allTasks).toHaveAttribute("aria-expanded", "false");
+    await expect.element(screen.getByRole("button", { name: "All tasks 1" })).toBeVisible();
+    await expect
+      .element(screen.getByRole("link", { name: "Daily briefing Paused" }))
+      .not.toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(getClientSettings().scheduledTaskOrganization.collapsedGroups).toEqual([
+        "completed",
+        "all",
+      ]),
+    );
+
+    await userEvent.click(allTasks);
+    await expect.element(allTasks).toHaveAttribute("aria-expanded", "true");
+    await vi.waitFor(() =>
+      expect(getClientSettings().scheduledTaskOrganization.collapsedGroups).toEqual(["completed"]),
+    );
   });
 
   it("moves a task into a subsection, pins it and keeps both choices when reopening Scheduled", async () => {
@@ -215,7 +273,7 @@ describe("Scheduled workspace", () => {
     };
     __setClientSettingsForTests({
       ...previousSettings,
-      scheduledTaskOrganization: { pinnedTaskKeys: [], sections: [] },
+      scheduledTaskOrganization: { pinnedTaskKeys: [], sections: [], collapsedGroups: [] },
     });
     using _collapse = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     const router = createWorkspaceRouter();

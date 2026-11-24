@@ -1,7 +1,9 @@
 import {
+  DEFAULT_COLLAPSED_SCHEDULED_TASK_GROUPS,
   isCompletedOneTimeScheduledTask,
   type EnvironmentId,
   type ScheduledTask,
+  type ScheduledTaskGroupId,
   type ScheduledTaskId,
   type ScheduledTaskOrganization,
 } from "@t3tools/contracts";
@@ -12,6 +14,7 @@ export type { ScheduledTaskSection } from "@t3tools/contracts";
 export const EMPTY_SCHEDULED_TASK_ORGANIZATION: ScheduledTaskOrganization = {
   pinnedTaskKeys: [],
   sections: [],
+  collapsedGroups: DEFAULT_COLLAPSED_SCHEDULED_TASK_GROUPS,
 };
 
 /** Completed one-time tasks leave the list this long after their run. */
@@ -54,6 +57,18 @@ export function toggleScheduledTaskPin(
     pinnedTaskKeys: pinned
       ? organization.pinnedTaskKeys.filter((key) => key !== taskKey)
       : [...organization.pinnedTaskKeys, taskKey],
+  };
+}
+
+export function toggleScheduledTaskGroup(
+  organization: ScheduledTaskOrganization,
+  group: ScheduledTaskGroupId,
+): ScheduledTaskOrganization {
+  return {
+    ...organization,
+    collapsedGroups: organization.collapsedGroups.includes(group)
+      ? organization.collapsedGroups.filter((candidate) => candidate !== group)
+      : [...organization.collapsedGroups, group],
   };
 }
 

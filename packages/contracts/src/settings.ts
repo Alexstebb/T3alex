@@ -434,9 +434,17 @@ export const ScheduledTaskSection = Schema.Struct({
   taskKeys: Schema.Array(Schema.String),
 });
 export type ScheduledTaskSection = typeof ScheduledTaskSection.Type;
+export const ScheduledTaskGroupId = Schema.Literals(["pinned", "upcoming", "all", "completed"]);
+export type ScheduledTaskGroupId = typeof ScheduledTaskGroupId.Type;
+export const DEFAULT_COLLAPSED_SCHEDULED_TASK_GROUPS: readonly ScheduledTaskGroupId[] = [
+  "completed",
+];
 export const ScheduledTaskOrganization = Schema.Struct({
   pinnedTaskKeys: Schema.Array(Schema.String),
   sections: Schema.Array(ScheduledTaskSection),
+  collapsedGroups: Schema.Array(ScheduledTaskGroupId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COLLAPSED_SCHEDULED_TASK_GROUPS)),
+  ),
 });
 export type ScheduledTaskOrganization = typeof ScheduledTaskOrganization.Type;
 
@@ -646,7 +654,13 @@ export const ClientSettingsSchema = Schema.Struct({
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarCustomSections: SidebarCustomSections.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   scheduledTaskOrganization: ScheduledTaskOrganization.pipe(
-    Schema.withDecodingDefault(Effect.succeed({ pinnedTaskKeys: [], sections: [] })),
+    Schema.withDecodingDefault(
+      Effect.succeed({
+        pinnedTaskKeys: [],
+        sections: [],
+        collapsedGroups: DEFAULT_COLLAPSED_SCHEDULED_TASK_GROUPS,
+      }),
+    ),
   ),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;

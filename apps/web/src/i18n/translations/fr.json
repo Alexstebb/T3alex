@@ -12831,12 +12831,9 @@
   "d3f29e19c4d5fc63": "Sélectionnez une tâche planifiée",
   "4cf381f54fcf28b7": "Chargement des exécutions…",
   "79a9f95357c30e46": "Cette exécution est indisponible",
-  "f92b760c3e84728a": "Aucune exécution pour le moment",
-  "55c16b90d148827c": "Exécutions",
   "be34fd580b388bc6": "Chargement des exécutions…",
   "92916d8bfa1904b1": "Aucune exécution pour le moment",
   "94490c7706243363": "Planifiées",
-  "d4b3fe97dd0501a8": "Instructions",
   "3a6f5b2f8819680f": "Nouvelle conversation dans {section}",
   "813dd5c62ff8e1ed": "Options de la section {section}",
   "74f489e47ca59e05": "Renommer la section",
@@ -12857,5 +12854,6 @@
   "cd9e0573b4527cba": "Pas démarrée",
   "a2ddfe4453ba1106": "Heure d’exécution supplémentaire {number}",
   "dbe33dd9ef0750bb": "Supprimer l’heure d’exécution {time}",
-  "9120e3146a9ec407": "Ajouter une heure d’exécution"
+  "9120e3146a9ec407": "Ajouter une heure d’exécution",
+  "cb6af3b1f18e1069": "Retour aux exécutions"
 }

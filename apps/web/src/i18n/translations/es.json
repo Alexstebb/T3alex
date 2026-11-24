@@ -12826,12 +12826,9 @@
   "d3f29e19c4d5fc63": "Selecciona una tarea programada",
   "4cf381f54fcf28b7": "Cargando ejecuciones…",
   "79a9f95357c30e46": "Esta ejecución no está disponible",
-  "f92b760c3e84728a": "Todavía no hay ejecuciones",
-  "55c16b90d148827c": "Ejecuciones",
   "be34fd580b388bc6": "Cargando ejecuciones…",
   "92916d8bfa1904b1": "Todavía no hay ejecuciones",
   "94490c7706243363": "Programadas",
-  "d4b3fe97dd0501a8": "Instrucciones",
   "3a6f5b2f8819680f": "Nuevo chat en {section}",
   "813dd5c62ff8e1ed": "Opciones de la sección {section}",
   "74f489e47ca59e05": "Cambiar el nombre de la sección",
@@ -12852,5 +12849,6 @@
   "cd9e0573b4527cba": "Sin iniciar",
   "a2ddfe4453ba1106": "Hora de ejecución adicional {number}",
   "dbe33dd9ef0750bb": "Quitar la hora de ejecución {time}",
-  "9120e3146a9ec407": "Añadir hora de ejecución"
+  "9120e3146a9ec407": "Añadir hora de ejecución",
+  "cb6af3b1f18e1069": "Volver a las ejecuciones"
 }

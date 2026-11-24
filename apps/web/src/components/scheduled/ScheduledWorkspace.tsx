@@ -12,7 +12,14 @@ import {
 } from "@t3tools/contracts";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { msg, T, useGT, useLocale, useMessages } from "gt-react";
-import { CalendarClockIcon, HistoryIcon, PencilIcon, PlayIcon, PlusIcon } from "lucide-react";
+import {
+  CalendarClockIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PencilIcon,
+  PlayIcon,
+  PlusIcon,
+} from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 
 import { isElectron } from "../../env";
@@ -21,6 +28,7 @@ import { cn } from "../../lib/utils";
 import { useProject } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -31,6 +39,7 @@ import { SidebarInset } from "../ui/sidebar";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { ScheduledRunOutput } from "./ScheduledRunOutput";
+import { formatScheduledRunTime } from "./scheduledRunLabel";
 import { scheduledTaskState } from "./scheduledTaskOrganization";
 import { useScheduledWorkspaceTasks } from "./useScheduledWorkspaceTasks";
 
@@ -71,69 +80,57 @@ function RunList({
 }) {
   const messages = useMessages();
   const locale = useLocale();
-  const gt = useGT();
-  const formatter = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const nowMs = Date.parse(useNowMinute());
   return (
-    <aside
-      className="flex max-h-64 min-h-0 flex-col border-t bg-muted/15 lg:h-full lg:max-h-none lg:w-64 lg:shrink-0 lg:border-t-0 lg:border-l"
-      aria-label={gt("Runs")}
-    >
-      <h2 className="flex items-center gap-2 border-b px-4 py-3 text-sm font-medium">
-        <HistoryIcon aria-hidden className="size-4 text-muted-foreground" />
-        <T>Runs</T>
-      </h2>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {error !== null ? (
-          <div className="space-y-1 px-2 py-1.5 text-xs">
-            <p role="status" className="text-destructive">
-              {error}
-            </p>
-            <Button variant="ghost" size="xs" onClick={onRetry}>
-              <T>Retry</T>
-            </Button>
-          </div>
-        ) : null}
-        {runs.length === 0 && error === null ? (
-          <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
-            {loading ? <T>Loading runs…</T> : <T>No runs yet</T>}
+    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      {error !== null ? (
+        <div className="space-y-1 px-2 py-1.5 text-xs">
+          <p role="status" className="text-destructive">
+            {error}
           </p>
-        ) : null}
-        <ul>
-          {runs.map((run, index) => (
-            <li key={run.runId}>
-              <button
-                type="button"
-                aria-current={selected?.runId === run.runId ? "true" : undefined}
-                className={cn(
-                  "flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left text-sm outline-none hover:bg-accent/65 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  selected?.runId === run.runId && "bg-accent text-accent-foreground",
-                )}
-                onClick={() => onSelect(run)}
-              >
-                <span className="flex flex-wrap items-center gap-x-2">
-                  <time dateTime={run.requestedAt}>
-                    {formatter.format(new Date(run.requestedAt))}
-                  </time>
-                  {index === 0 ? (
-                    <Badge variant="outline">
-                      <T>Latest</T>
-                    </Badge>
-                  ) : null}
-                </span>
+          <Button variant="ghost" size="xs" onClick={onRetry}>
+            <T>Retry</T>
+          </Button>
+        </div>
+      ) : null}
+      {runs.length === 0 && error === null ? (
+        <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
+          {loading ? <T>Loading runs…</T> : <T>No runs yet</T>}
+        </p>
+      ) : null}
+      <ul className="space-y-1.5">
+        {runs.map((run) => (
+          <li key={run.runId}>
+            <button
+              type="button"
+              aria-current={selected?.runId === run.runId ? "true" : undefined}
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-3 rounded-lg bg-muted/40 px-3 py-2.5 text-left text-sm outline-none hover:bg-accent/65 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                selected?.runId === run.runId && "bg-accent text-accent-foreground",
+              )}
+              onClick={() => onSelect(run)}
+            >
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <time dateTime={run.requestedAt} className="truncate">
+                  {formatScheduledRunTime(run.requestedAt, nowMs, timestampFormat, locale)}
+                </time>
                 <span
                   className={cn(
                     "text-xs text-muted-foreground",
                     run.status === "failed" && "text-destructive",
+                    run.status === "running" && "font-medium text-info-foreground",
                   )}
                 >
                   {messages(runLabels[run.status])}
                 </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </aside>
+              </span>
+              <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -164,7 +161,8 @@ export function ScheduledWorkspace() {
     messages,
   );
   const runs = history.data?.runs ?? [];
-  const selectedRun = runId === undefined ? runs[0] : runs.find((run) => run.runId === runId);
+  const selectedRun = runs.find((run) => run.runId === runId);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [editor, setEditor] = useState<{
     environmentId: EnvironmentId;
     task: ScheduledTask | null;
@@ -228,11 +226,70 @@ export function ScheduledWorkspace() {
       </WorkspacePageHeader>
       {row ? (
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold wrap-break-word">{row.task.title}</h2>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          {runId !== undefined ? (
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="border-b px-3 py-2 lg:hidden">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    void navigate({
+                      to: "/scheduled",
+                      search: { environmentId: row.environmentId, taskId: row.task.id },
+                    })
+                  }
+                >
+                  <ChevronLeftIcon className="size-3.5" />
+                  <T>Back to runs</T>
+                </Button>
+              </div>
+              <div className="scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
+                {selectedRun ? (
+                  <ScheduledRunOutput
+                    key={selectedRun.runId}
+                    environmentId={row.environmentId}
+                    task={row.task}
+                    run={selectedRun}
+                  />
+                ) : (
+                  <p role="status" className="px-5 py-6 text-sm text-muted-foreground">
+                    {history.error ??
+                      (history.data === null ? gt("Loading runs…") : gt("This run is unavailable"))}
+                  </p>
+                )}
+              </div>
+            </section>
+          ) : null}
+          <aside
+            aria-label={gt("Runs")}
+            className={cn(
+              "min-h-0 flex-col",
+              runId === undefined
+                ? "flex flex-1"
+                : "hidden lg:flex lg:w-80 lg:shrink-0 lg:border-l xl:w-96",
+            )}
+          >
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col",
+                runId === undefined && "mx-auto w-full max-w-2xl",
+              )}
+            >
+              <div className="space-y-2 px-4 pt-4 pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="min-w-0 text-base font-semibold wrap-break-word">
+                    {row.task.title}
+                  </h2>
+                  <Button
+                    size="xs"
+                    variant="ghost-muted"
+                    aria-expanded={detailsOpen}
+                    onClick={() => setDetailsOpen((open) => !open)}
+                  >
+                    <T>Details</T>
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                   {project ? <span>{project.title} ·</span> : null}
                   {environmentCount > 1 && source ? (
                     <span>{source.environment.label} ·</span>
@@ -257,79 +314,57 @@ export function ScheduledWorkspace() {
                     </Badge>
                   ) : null}
                 </div>
-              </div>
-              {canEdit ? (
-                <div className="flex items-center gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => setEditor(row)}>
-                    <PencilIcon className="size-3.5" />
-                    <T>Edit</T>
-                  </Button>
-                  {row.task.schedule.type !== "webhook" && !completedOnce ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={
-                        pendingTaskId === row.task.id || row.task.lastRunStatus === "running"
-                      }
-                      onClick={() => void runNow()}
-                    >
-                      <PlayIcon className="size-3.5" />
-                      <T>Run now</T>
+                {canEdit ? (
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => setEditor(row)}>
+                      <PencilIcon className="size-3.5" />
+                      <T>Edit</T>
                     </Button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-            <div className="scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
-              {selectedRun ? (
-                <ScheduledRunOutput
-                  key={selectedRun.runId}
-                  environmentId={row.environmentId}
-                  task={row.task}
-                  run={selectedRun}
-                />
-              ) : (
-                <div className="mx-auto max-w-3xl space-y-3 px-5 py-6">
-                  <p role="status" className="text-sm text-muted-foreground">
-                    {history.error ??
-                      (history.data === null
-                        ? gt("Loading runs…")
-                        : runId !== undefined
-                          ? gt("This run is unavailable")
-                          : gt("No runs yet"))}
-                  </p>
-                  {row.task.lastRunError ? (
-                    <p className="text-sm text-destructive">{row.task.lastRunError}</p>
-                  ) : null}
-                  <details className="text-sm">
-                    <summary className="cursor-pointer font-medium">
-                      <T>Instructions</T>
-                    </summary>
-                    <p className="mt-2 whitespace-pre-wrap wrap-break-word text-muted-foreground">
+                    {row.task.schedule.type !== "webhook" && !completedOnce ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          pendingTaskId === row.task.id || row.task.lastRunStatus === "running"
+                        }
+                        onClick={() => void runNow()}
+                      >
+                        <PlayIcon className="size-3.5" />
+                        <T>Run now</T>
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {detailsOpen ? (
+                  <div className="space-y-2 rounded-lg bg-muted/40 px-3 py-2.5 text-sm">
+                    <p className="whitespace-pre-wrap wrap-break-word text-muted-foreground">
                       {row.task.prompt}
                     </p>
-                  </details>
-                </div>
-              )}
+                    {row.task.lastRunError ? (
+                      <p className="text-destructive">{row.task.lastRunError}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <RunList
+                runs={runs}
+                selected={selectedRun}
+                loading={history.data === null}
+                error={history.error}
+                onRetry={history.refresh}
+                onSelect={(run) =>
+                  void navigate({
+                    to: "/scheduled",
+                    search: {
+                      environmentId: row.environmentId,
+                      taskId: row.task.id,
+                      runId: run.runId,
+                    },
+                  })
+                }
+              />
             </div>
-          </section>
-          <RunList
-            runs={runs}
-            selected={selectedRun}
-            loading={history.data === null}
-            error={history.error}
-            onRetry={history.refresh}
-            onSelect={(run) =>
-              void navigate({
-                to: "/scheduled",
-                search: {
-                  environmentId: row.environmentId,
-                  taskId: row.task.id,
-                  ...(run.runId === runs[0]?.runId ? {} : { runId: run.runId }),
-                },
-              })
-            }
-          />
+          </aside>
         </div>
       ) : (
         <div
