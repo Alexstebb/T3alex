@@ -601,3 +601,51 @@ it.effect(
       expect(morning?.nextRunAt).toBe(DateTime.formatIso(DateTime.toUtc(at(8, 0, 2))));
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
+
+it.effect("keeps every run time when a save passes back the stored fixed-time schedule", () =>
+  Effect.gen(function* () {
+    const layerDependencies = Layer.mergeAll(
+      NodeCrypto.layer,
+      Scheduler.layer,
+      ManagedPolicy.layerTest(),
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        namedProjectsRoot: "/projects",
+        isScratchProject: () => Effect.succeed(false),
+      }),
+      Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+      Layer.mock(SecretRequests.SecretRequests)({}),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const schedule = {
+        type: "fixed_time",
+        timeOfDay: "10:00",
+        additionalTimesOfDay: ["12:00", "14:00", "16:00"],
+        weekdays: [1, 2, 3, 4, 5],
+      } as const;
+      const input = yield* decodeUpsertInput({
+        id: "scheduled-task:several-times",
+        title: "Club replies",
+        prompt: "Check the replies.",
+        enabled: false,
+        schedule,
+        projectId: "project-several-times",
+        workspaceStrategy: { type: "root" },
+        modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+      yield* service.upsert(input);
+      const [stored] = (yield* service.list()).tasks;
+      const saved = yield* service.upsert({
+        ...input,
+        requireExisting: true,
+        enabled: true,
+        schedule: stored!.schedule,
+      });
+      expect(saved.task.schedule).toEqual(schedule);
+      expect((yield* service.list()).tasks[0]?.schedule).toEqual(schedule);
+    }).pipe(Effect.provide(ScheduledTaskService.layer.pipe(Layer.provide(layerDependencies))));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);

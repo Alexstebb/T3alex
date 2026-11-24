@@ -1199,6 +1199,85 @@ it.effect("schedule_task and list_scheduled_tasks carry several run times of a d
   ),
 );
 
+const multiTimeSchedule = {
+  type: "fixed_time",
+  timeOfDay: "10:00",
+  additionalTimesOfDay: ["12:00", "14:00", "16:00"],
+  weekdays: [1, 2, 3, 4, 5],
+};
+
+it.effect.each([
+  { field: "enabled", args: { enabled: true }, changed: { enabled: true } },
+  { field: "title", args: { title: "Renamed" }, changed: { title: "Renamed" } },
+  { field: "prompt", args: { prompt: "New prompt" }, changed: { prompt: "New prompt" } },
+])(
+  "schedule_task keeps the stored schedule when an update passes only $field",
+  ({ args, changed }) => {
+    const stored = new Map<string, Record<string, unknown>>([
+      [
+        "task-auto",
+        {
+          ...(scheduledTask("task-auto", "auto") as object),
+          enabled: false,
+          schedule: multiTimeSchedule,
+        },
+      ],
+    ]);
+    return Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const call = (name: string, callArgs: Record<string, unknown>) =>
+        server
+          .callTool({ name, arguments: callArgs })
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, clientScope("auto")),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+      const saved = yield* call("schedule_task", { scheduledTaskId: "task-auto", ...args });
+      expect(saved.isError).toBe(false);
+      expect(saved.structuredContent).toMatchObject({ schedule: multiTimeSchedule, ...changed });
+      expect(stored.get("task-auto")).toMatchObject({
+        schedule: multiTimeSchedule,
+        prompt: "prompt" in changed ? changed.prompt : "Check the build",
+        title: "title" in changed ? changed.title : "task-auto",
+        modelSelection: { instanceId: "codex", model: "gpt-5" },
+      });
+      const listed = yield* call("list_scheduled_tasks", { scheduledTaskId: "task-auto" });
+      expect(listed.structuredContent).toMatchObject({
+        tasks: [{ scheduledTaskId: "task-auto", schedule: multiTimeSchedule, ...changed }],
+      });
+    }).pipe(
+      Effect.provide(
+        layerOrchestratorToolkit.pipe(
+          Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+          Layer.provide(NodeCrypto.layer),
+          Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
+          Layer.provide(ServerSettings.layerTest()),
+          Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+          Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
+          Layer.provide(
+            Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+              list: () => Effect.succeed({ tasks: [...stored.values()] } as never),
+              upsert: (input) =>
+                Effect.sync(() => {
+                  const { id, requireExisting: _requireExisting, ...fields } = input;
+                  const task = { ...stored.get(id ?? "task-auto"), ...fields };
+                  stored.set(id ?? "task-auto", task);
+                  return { task } as never;
+                }),
+            }),
+          ),
+          Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+          Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
+          Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+          Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+          Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+          Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
+        ),
+      ),
+    );
+  },
+);
+
 it.effect.each([
   {
     scenario: "explains why a webhook task cannot run manually",
