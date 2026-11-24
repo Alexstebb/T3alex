@@ -17,17 +17,23 @@ afterAll(() => {
   NodeFS.rmSync(clerkStateDir, { recursive: true, force: true });
 });
 
-const { createClerkBridgeMock, requestSingleInstanceLockMock, storageAdapter, storageMock } =
-  vi.hoisted(() => ({
-    createClerkBridgeMock: vi.fn(),
-    requestSingleInstanceLockMock: vi.fn(() => true),
-    storageAdapter: {
-      getItem: vi.fn(),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    },
-    storageMock: vi.fn(),
-  }));
+const {
+  createClerkBridgeMock,
+  electronMock,
+  requestSingleInstanceLockMock,
+  storageAdapter,
+  storageMock,
+} = vi.hoisted(() => ({
+  createClerkBridgeMock: vi.fn(),
+  electronMock: { app: { setAsDefaultProtocolClient: (_protocol: string): boolean => true } },
+  requestSingleInstanceLockMock: vi.fn(() => true),
+  storageAdapter: {
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+  },
+  storageMock: vi.fn(),
+}));
 
 vi.mock("@clerk/electron", () => ({
   createClerkBridge: createClerkBridgeMock,
@@ -36,6 +42,8 @@ vi.mock("@clerk/electron", () => ({
 vi.mock("@clerk/electron/storage", () => ({
   storage: storageMock,
 }));
+
+vi.mock("electron", () => electronMock);
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -64,12 +72,14 @@ const layerDesktopClerk = (
     copyText: () => Effect.void,
   },
   listeners = new Map<string, (...args: unknown[]) => void>(),
+  skipProtocolRegistration = false,
 ) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: clerkStateDir,
     isDevelopment,
     appDataDirectory: "/tmp/app-data",
     platform,
+    skipProtocolRegistration,
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
   const electronApp = {
@@ -171,6 +181,30 @@ describe("DesktopClerk", () => {
         [{ path: NodePath.join(NodePath.resolve(clerkStateDir), "clerk") }],
       ]);
       assert.notStrictEqual(createClerkBridgeMock.mock.calls[0]?.[0]?.storage, storageAdapter);
+    },
+  );
+
+  it.effect.each([false, true])(
+    "lets startup opt out of registering the protocol handler (skip: %s)",
+    (skip) => {
+      const registered: string[] = [];
+      const register = (protocol: string) => {
+        registered.push(protocol);
+        return true;
+      };
+      electronMock.app.setAsDefaultProtocolClient = register;
+      storageMock.mockReturnValue(storageAdapter);
+      createClerkBridgeMock.mockImplementation(() => {
+        electronMock.app.setAsDefaultProtocolClient("t3code");
+        return { cleanup: vi.fn(), isPrimaryInstance: true };
+      });
+      return Effect.gen(function* () {
+        yield* Layer.build(
+          layerDesktopClerk(false, [], "win32", undefined, undefined, undefined, skip),
+        );
+        assert.deepEqual(registered, skip ? [] : ["t3code"]);
+        assert.strictEqual(electronMock.app.setAsDefaultProtocolClient, register);
+      }).pipe(Effect.scoped);
     },
   );
 

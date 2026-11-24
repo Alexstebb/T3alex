@@ -44,6 +44,8 @@ export class DesktopEnvironment extends Context.Service<
     readonly resourcesPath: string;
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
+    readonly userDataDirectoryOverride: Option.Option<string>;
+    readonly skipProtocolRegistration: boolean;
     readonly baseDir: string;
     readonly stateDir: string;
     readonly desktopSettingsPath: string;
@@ -196,6 +198,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
     resourcesPath,
     homeDirectory,
     appDataDirectory,
+    userDataDirectoryOverride: config.userDataDirectoryOverride,
+    skipProtocolRegistration: config.skipProtocolRegistration,
     baseDir,
     stateDir,
     desktopSettingsPath: path.join(stateDir, "desktop-settings.json"),

@@ -1,6 +1,7 @@
 import { createClerkBridge } from "@clerk/electron";
 import * as NodeURL from "node:url";
 import { storage } from "@clerk/electron/storage";
+import * as Electron from "electron";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -101,6 +102,18 @@ function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean, user
   });
 }
 
+// Local fork: Clerk always claims the protocol; a side-by-side build must leave the installed app's.
+function withoutProtocolRegistration<A>(skip: boolean, create: () => A): A {
+  if (!skip) return create();
+  const register = Electron.app.setAsDefaultProtocolClient;
+  Electron.app.setAsDefaultProtocolClient = () => false;
+  try {
+    return create();
+  } finally {
+    Electron.app.setAsDefaultProtocolClient = register;
+  }
+}
+
 /** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -142,7 +155,9 @@ export const make = Effect.gen(function* () {
   yield* Effect.acquireRelease(
     Effect.try({
       try: () =>
-        createDesktopClerkBridge(environment.stateDir, environment.isDevelopment, userDataPath),
+        withoutProtocolRegistration(environment.skipProtocolRegistration, () =>
+          createDesktopClerkBridge(environment.stateDir, environment.isDevelopment, userDataPath),
+        ),
       catch: (cause) =>
         new DesktopClerkBridgeInitializationError({
           stateDir: environment.stateDir,
