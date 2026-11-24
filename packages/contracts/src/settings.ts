@@ -445,6 +445,10 @@ export const ScheduledTaskOrganization = Schema.Struct({
   collapsedGroups: Schema.Array(ScheduledTaskGroupId).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COLLAPSED_SCHEDULED_TASK_GROUPS)),
   ),
+  // Task key -> ISO time the task's latest finished run was last seen.
+  lastSeenAt: Schema.Record(Schema.String, Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
 });
 export type ScheduledTaskOrganization = typeof ScheduledTaskOrganization.Type;
 
@@ -659,6 +663,7 @@ export const ClientSettingsSchema = Schema.Struct({
         pinnedTaskKeys: [],
         sections: [],
         collapsedGroups: DEFAULT_COLLAPSED_SCHEDULED_TASK_GROUPS,
+        lastSeenAt: {},
       }),
     ),
   ),

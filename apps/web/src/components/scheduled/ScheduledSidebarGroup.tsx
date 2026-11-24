@@ -1,3 +1,4 @@
+import type { ClientSettings } from "@t3tools/contracts";
 import { Link, useLocation } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { T, useGT } from "gt-react";
@@ -5,13 +6,15 @@ import { ArrowUpRightIcon, CalendarClockIcon, ChevronDownIcon, PlusIcon } from "
 import { memo, useId, useState } from "react";
 
 import { useLocalStorage, writeLocalStorageValue } from "../../hooks/useLocalStorage";
+import { useNowMinute } from "../../hooks/useNowMinute";
+import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { isScheduledWorkspacePath } from "../sidebar/mainAppLocation";
 import { Button } from "../ui/button";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ScheduledTaskNavigation } from "./ScheduledTaskNavigation";
-import { scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
+import { hasUnreadScheduledTask, scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
 import { validateScheduledWorkspaceSearch } from "./scheduledWorkspaceSearch";
 import { useScheduledWorkspaceTasks } from "./useScheduledWorkspaceTasks";
 
@@ -20,6 +23,8 @@ export const SCHEDULED_SIDEBAR_COLLAPSED_KEY = "t3code:scheduled-sidebar:collaps
 export function expandScheduledSidebar() {
   writeLocalStorageValue(SCHEDULED_SIDEBAR_COLLAPSED_KEY, false, true, Schema.Boolean);
 }
+
+const selectOrganization = (settings: ClientSettings) => settings.scheduledTaskOrganization;
 
 export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
   const gt = useGT();
@@ -31,6 +36,10 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
   );
   const [creatingSection, setCreatingSection] = useState(false);
   const { isMobile, setOpenMobile } = useSidebar();
+  const { rows } = useScheduledWorkspaceTasks();
+  const organization = useClientSettings(selectOrganization);
+  const nowMinute = useNowMinute();
+  const hasUnread = hasUnreadScheduledTask(rows, organization, Date.parse(nowMinute));
 
   return (
     <section className="mb-2">
@@ -52,6 +61,13 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
             <T>Scheduled</T>
           </span>
+          {collapsed && hasUnread ? (
+            <span
+              aria-hidden
+              data-unread=""
+              className="size-1.5 shrink-0 rounded-full bg-primary"
+            />
+          ) : null}
           <ChevronDownIcon
             aria-hidden
             className={cn(

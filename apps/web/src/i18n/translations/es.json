@@ -12850,5 +12850,14 @@
   "a2ddfe4453ba1106": "Hora de ejecución adicional {number}",
   "dbe33dd9ef0750bb": "Quitar la hora de ejecución {time}",
   "9120e3146a9ec407": "Añadir hora de ejecución",
-  "cb6af3b1f18e1069": "Volver a las ejecuciones"
+  "744900804efcf075": "Se eliminan la tarea y su programación. Los chats de ejecuciones anteriores se conservan.",
+  "89584efbb3a30de3": "Eliminar tarea",
+  "b8736743b1ab48f3": "Marcar como leída",
+  "ea6e3133277fe5f2": "Marcar como no leída",
+  "8b4eabdfc58b5fa0": "Editar",
+  "2ca561694eb0463f": "Pausar",
+  "4cbc7c43dd33c363": "Reanudar",
+  "da49b8271b9dffa0": "Eliminar",
+  "55c16b90d148827c": "Ejecuciones",
+  "aba29e77e52bca46": "Eliminar"
 }

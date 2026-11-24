@@ -12855,5 +12855,14 @@
   "a2ddfe4453ba1106": "Horário de execução adicional {number}",
   "dbe33dd9ef0750bb": "Remover horário de execução {time}",
   "9120e3146a9ec407": "Adicionar horário de execução",
-  "cb6af3b1f18e1069": "Voltar para as execuções"
+  "744900804efcf075": "A tarefa e sua programação serão removidas. Os chats de execuções anteriores são mantidos.",
+  "89584efbb3a30de3": "Excluir tarefa",
+  "b8736743b1ab48f3": "Marcar como lida",
+  "ea6e3133277fe5f2": "Marcar como não lida",
+  "8b4eabdfc58b5fa0": "Editar",
+  "2ca561694eb0463f": "Pausar",
+  "4cbc7c43dd33c363": "Retomar",
+  "da49b8271b9dffa0": "Excluir",
+  "55c16b90d148827c": "Execuções",
+  "aba29e77e52bca46": "Excluir"
 }

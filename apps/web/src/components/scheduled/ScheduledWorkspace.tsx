@@ -14,16 +14,21 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { msg, T, useGT, useLocale, useMessages } from "gt-react";
 import {
   CalendarClockIcon,
-  ChevronLeftIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   PencilIcon,
   PlayIcon,
   PlusIcon,
+  Trash2Icon,
 } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { isElectron } from "../../env";
-import { useClientSettings } from "../../hooks/useSettings";
+import {
+  getClientSettings,
+  persistClientSettingsPatch,
+  useClientSettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useProject } from "../../state/entities";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -40,15 +45,19 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { ScheduledRunOutput } from "./ScheduledRunOutput";
 import { formatScheduledRunTime } from "./scheduledRunLabel";
-import { scheduledTaskState } from "./scheduledTaskOrganization";
+import {
+  ScheduledTaskDeleteDialog,
+  ScheduledTaskEditor,
+  useScheduledTaskActions,
+} from "./scheduledTaskActions";
+import {
+  markScheduledTaskSeen,
+  scheduledTaskOrganizationKey,
+  scheduledTaskState,
+} from "./scheduledTaskOrganization";
 import { useScheduledWorkspaceTasks } from "./useScheduledWorkspaceTasks";
 
 const route = getRouteApi("/_chat/scheduled");
-const ScheduledTaskEditor = lazy(async () => {
-  const { StandaloneScheduledTaskEditorDialog } =
-    await import("../settings/ScheduledTasksSettings");
-  return { default: StandaloneScheduledTaskEditorDialog };
-});
 
 const runLabels = {
   preparing: msg("Preparing"),
@@ -63,25 +72,26 @@ const runLabels = {
   rolled_back: msg("Rolled back"),
 } satisfies Record<ScheduledTaskRun["status"], string>;
 
-function RunList({
-  runs,
-  selected,
-  loading,
-  error,
-  onSelect,
-  onRetry,
-}: {
+interface RunListProps {
   readonly runs: readonly ScheduledTaskRun[];
   readonly selected: ScheduledTaskRun | undefined;
   readonly loading: boolean;
   readonly error: string | null;
   readonly onSelect: (run: ScheduledTaskRun) => void;
   readonly onRetry: () => void;
-}) {
-  const messages = useMessages();
+}
+
+function useRunTimeLabel() {
   const locale = useLocale();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const nowMs = Date.parse(useNowMinute());
+  return (requestedAt: string) =>
+    formatScheduledRunTime(requestedAt, nowMs, timestampFormat, locale);
+}
+
+function RunList({ runs, selected, loading, error, onSelect, onRetry }: RunListProps) {
+  const messages = useMessages();
+  const runTime = useRunTimeLabel();
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
       {error !== null ? (
@@ -113,7 +123,7 @@ function RunList({
             >
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <time dateTime={run.requestedAt} className="truncate">
-                  {formatScheduledRunTime(run.requestedAt, nowMs, timestampFormat, locale)}
+                  {runTime(run.requestedAt)}
                 </time>
                 <span
                   className={cn(
@@ -134,6 +144,172 @@ function RunList({
   );
 }
 
+/** Below the two-column breakpoint the runs fold into a section above the output. */
+function RunsDisclosure(props: RunListProps) {
+  const [open, setOpen] = useState(false);
+  const runTime = useRunTimeLabel();
+  return (
+    <div className="border-b lg:hidden">
+      <button
+        type="button"
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ChevronDownIcon
+          aria-hidden
+          className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")}
+        />
+        <span className="font-medium">
+          <T>Runs</T>
+        </span>
+        <span className="tabular-nums text-muted-foreground">{props.runs.length}</span>
+        {props.selected ? (
+          <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">
+            {runTime(props.selected.requestedAt)}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="flex max-h-72 flex-col">
+          <RunList
+            {...props}
+            onSelect={(run) => {
+              setOpen(false);
+              props.onSelect(run);
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskInstructions({ task }: { readonly task: ScheduledTask }) {
+  return (
+    <div className="space-y-2 rounded-lg bg-muted/40 px-3 py-2.5 text-sm">
+      <p className="whitespace-pre-wrap wrap-break-word text-muted-foreground">{task.prompt}</p>
+      {task.lastRunError ? <p className="text-destructive">{task.lastRunError}</p> : null}
+    </div>
+  );
+}
+
+function TaskHeader(props: {
+  readonly environmentId: EnvironmentId;
+  readonly task: ScheduledTask;
+  readonly timeZone: string | undefined;
+  readonly environmentLabel: string | null;
+  readonly hasRuns: boolean;
+  readonly detailsOpen: boolean;
+  readonly onToggleDetails: () => void;
+  readonly onEdit: () => void;
+  readonly onDeleted: () => void;
+}) {
+  const { environmentId, task } = props;
+  const gt = useGT();
+  const messages = useMessages();
+  const locale = useLocale();
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const actions = useScheduledTaskActions(environmentId);
+  const project = useProject(scopeProjectRef(environmentId, task.projectId));
+  const [pending, setPending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const completedOnce = isCompletedOneTimeScheduledTask(task);
+  const runTask = useAtomCommand(serverEnvironment.runScheduledTaskNow, { reportFailure: false });
+  const runNow = async () => {
+    if (pending) return;
+    setPending(true);
+    const result = await runTask({ environmentId, input: { id: task.id } });
+    setPending(false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: gt("Could not update scheduled task"),
+          description: String(squashAtomCommandFailure(result)),
+        }),
+      );
+    }
+  };
+  return (
+    <header className="space-y-2 border-b px-4 pt-4 pb-3">
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="min-w-0 text-base font-semibold wrap-break-word">{task.title}</h2>
+        {props.hasRuns ? (
+          <Button
+            size="xs"
+            variant="ghost-muted"
+            aria-expanded={props.detailsOpen}
+            onClick={props.onToggleDetails}
+          >
+            <T>Details</T>
+          </Button>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        {project ? <span>{project.title} ·</span> : null}
+        {props.environmentLabel ? <span>{props.environmentLabel} ·</span> : null}
+        <span>
+          {scheduleLabel(
+            task.schedule,
+            timestampFormat,
+            props.timeZone,
+            task.nextRunAt,
+            messages,
+            locale,
+          )}
+        </span>
+        {!task.enabled ? (
+          <Badge variant="outline">
+            {completedOnce
+              ? gt("Completed")
+              : scheduledTaskState(task) === "not_started"
+                ? gt("Not started")
+                : gt("Paused")}
+          </Badge>
+        ) : null}
+      </div>
+      {actions.canEdit || actions.canDelete ? (
+        <div className="flex flex-wrap items-center gap-1">
+          {actions.canEdit ? (
+            <Button size="sm" variant="ghost" onClick={props.onEdit}>
+              <PencilIcon className="size-3.5" />
+              <T>Edit</T>
+            </Button>
+          ) : null}
+          {actions.canEdit && task.schedule.type !== "webhook" && !completedOnce ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending || task.lastRunStatus === "running"}
+              onClick={() => void runNow()}
+            >
+              <PlayIcon className="size-3.5" />
+              <T>Run now</T>
+            </Button>
+          ) : null}
+          {actions.canDelete ? (
+            <Button size="sm" variant="ghost-destructive" onClick={() => setDeleting(true)}>
+              <Trash2Icon className="size-3.5" />
+              <T>Delete</T>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {props.detailsOpen && props.hasRuns ? <TaskInstructions task={task} /> : null}
+      {deleting ? (
+        <ScheduledTaskDeleteDialog
+          task={task}
+          onClose={() => setDeleting(false)}
+          onDelete={async () => {
+            if (await actions.deleteTask(task)) props.onDeleted();
+          }}
+        />
+      ) : null}
+    </header>
+  );
+}
+
 const canCreateAtom = environmentAtomList(
   "web-scheduled-workspace-permissions",
   serverEnvironment.upsertScheduledTask.permissionAtom,
@@ -143,14 +319,11 @@ export function ScheduledWorkspace() {
   const { environmentId, taskId, runId } = route.useSearch();
   const navigate = useNavigate({ from: "/scheduled" });
   const messages = useMessages();
-  const locale = useLocale();
-  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const gt = useGT();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { rows, sources, environmentCount, isReady } = useScheduledWorkspaceTasks();
   const row = rows.find((item) => item.environmentId === environmentId && item.task.id === taskId);
   const source = sources.find((item) => item.environment.environmentId === environmentId);
-  const project = useProject(row ? scopeProjectRef(row.environmentId, row.task.projectId) : null);
   const history = useEnvironmentQuery(
     row
       ? serverEnvironment.scheduledTaskRunsLive({
@@ -161,35 +334,42 @@ export function ScheduledWorkspace() {
     messages,
   );
   const runs = history.data?.runs ?? [];
-  const selectedRun = runs.find((run) => run.runId === runId);
+  const latestRun = runs[0];
+  // Without a runId the newest run is shown and the view follows new ones; a runId pins that run.
+  const selectedRun = runId === undefined ? latestRun : runs.find((run) => run.runId === runId);
+  const latestOnScreen = selectedRun !== undefined && selectedRun === latestRun;
+  const taskKey = row ? scheduledTaskOrganizationKey(row.environmentId, row.task.id) : null;
+  const lastRunAt = row?.task.lastRunAt ?? null;
+  const lastRunStatus = row?.task.lastRunStatus ?? "never";
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editor, setEditor] = useState<{
     environmentId: EnvironmentId;
     task: ScheduledTask | null;
   } | null>(null);
-  const [pendingTaskId, setPendingTaskId] = useState<ScheduledTask["id"] | null>(null);
   const connectedIds = sources.map(({ environment }) => environment.environmentId);
   const canCreate = useAtomValue(canCreateAtom(environmentIdsKey(connectedIds)));
   const creationIds = connectedIds.filter((_id, index) => canCreate[index]);
   const creationEnvironment =
     creationIds.find((id) => id === (row?.environmentId ?? primaryEnvironmentId)) ?? creationIds[0];
-  const canEdit = row !== undefined && creationIds.includes(row.environmentId);
-  const completedOnce = row !== undefined && isCompletedOneTimeScheduledTask(row.task);
-  const runTask = useAtomCommand(serverEnvironment.runScheduledTaskNow, { reportFailure: false });
-  const runNow = async () => {
-    if (!row || pendingTaskId === row.task.id) return;
-    setPendingTaskId(row.task.id);
-    const result = await runTask({ environmentId: row.environmentId, input: { id: row.task.id } });
-    setPendingTaskId((id) => (id === row.task.id ? null : id));
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt("Could not update scheduled task"),
-          description: String(squashAtomCommandFailure(result)),
-        }),
-      );
-    }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists in client settings that the latest finished result is on screen
+  useEffect(() => {
+    if (taskKey === null || !latestOnScreen) return;
+    const current = getClientSettings().scheduledTaskOrganization;
+    const next = markScheduledTaskSeen(current, taskKey, { lastRunAt, lastRunStatus }, Date.now());
+    if (next !== current) void persistClientSettingsPatch({ scheduledTaskOrganization: next });
+  }, [taskKey, latestOnScreen, lastRunAt, lastRunStatus]);
+
+  const selectRun = (run: ScheduledTaskRun) => {
+    if (!row) return;
+    void navigate({
+      to: "/scheduled",
+      search: {
+        environmentId: row.environmentId,
+        taskId: row.task.id,
+        ...(run === latestRun ? {} : { runId: run.runId }),
+      },
+    });
   };
   const emptyMessage =
     !isReady || (source && source.data === null && source.error === null)
@@ -203,6 +383,15 @@ export function ScheduledWorkspace() {
             : rows.length > 0
               ? gt("Select a scheduled task")
               : gt("No scheduled tasks");
+  const noRuns = history.data !== null && runs.length === 0;
+  const runListProps: RunListProps = {
+    runs,
+    selected: selectedRun,
+    loading: history.data === null,
+    error: history.error,
+    onRetry: history.refresh,
+    onSelect: selectRun,
+  };
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
@@ -225,24 +414,21 @@ export function ScheduledWorkspace() {
         </Button>
       </WorkspacePageHeader>
       {row ? (
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          {runId !== undefined ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <TaskHeader
+            environmentId={row.environmentId}
+            task={row.task}
+            timeZone={row.timeZone}
+            environmentLabel={environmentCount > 1 && source ? source.environment.label : null}
+            hasRuns={!noRuns}
+            detailsOpen={detailsOpen}
+            onToggleDetails={() => setDetailsOpen((open) => !open)}
+            onEdit={() => setEditor(row)}
+            onDeleted={() => void navigate({ to: "/scheduled", search: {} })}
+          />
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
             <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="border-b px-3 py-2 lg:hidden">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    void navigate({
-                      to: "/scheduled",
-                      search: { environmentId: row.environmentId, taskId: row.task.id },
-                    })
-                  }
-                >
-                  <ChevronLeftIcon className="size-3.5" />
-                  <T>Back to runs</T>
-                </Button>
-              </div>
+              <RunsDisclosure {...runListProps} />
               <div className="scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
                 {selectedRun ? (
                   <ScheduledRunOutput
@@ -251,6 +437,10 @@ export function ScheduledWorkspace() {
                     task={row.task}
                     run={selectedRun}
                   />
+                ) : noRuns || (history.error !== null && runId === undefined) ? (
+                  <div className="mx-auto max-w-3xl px-5 py-5">
+                    <TaskInstructions task={row.task} />
+                  </div>
                 ) : (
                   <p role="status" className="px-5 py-6 text-sm text-muted-foreground">
                     {history.error ??
@@ -259,112 +449,16 @@ export function ScheduledWorkspace() {
                 )}
               </div>
             </section>
-          ) : null}
-          <aside
-            aria-label={gt("Runs")}
-            className={cn(
-              "min-h-0 flex-col",
-              runId === undefined
-                ? "flex flex-1"
-                : "hidden lg:flex lg:w-80 lg:shrink-0 lg:border-l xl:w-96",
-            )}
-          >
-            <div
-              className={cn(
-                "flex min-h-0 flex-1 flex-col",
-                runId === undefined && "mx-auto w-full max-w-2xl",
-              )}
+            <aside
+              aria-label={gt("Runs")}
+              className="hidden min-h-0 flex-col lg:flex lg:w-72 lg:shrink-0 lg:border-l xl:w-80"
             >
-              <div className="space-y-2 px-4 pt-4 pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="min-w-0 text-base font-semibold wrap-break-word">
-                    {row.task.title}
-                  </h2>
-                  <Button
-                    size="xs"
-                    variant="ghost-muted"
-                    aria-expanded={detailsOpen}
-                    onClick={() => setDetailsOpen((open) => !open)}
-                  >
-                    <T>Details</T>
-                  </Button>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                  {project ? <span>{project.title} ·</span> : null}
-                  {environmentCount > 1 && source ? (
-                    <span>{source.environment.label} ·</span>
-                  ) : null}
-                  <span>
-                    {scheduleLabel(
-                      row.task.schedule,
-                      timestampFormat,
-                      row.timeZone,
-                      row.task.nextRunAt,
-                      messages,
-                      locale,
-                    )}
-                  </span>
-                  {!row.task.enabled ? (
-                    <Badge variant="outline">
-                      {completedOnce
-                        ? gt("Completed")
-                        : scheduledTaskState(row.task) === "not_started"
-                          ? gt("Not started")
-                          : gt("Paused")}
-                    </Badge>
-                  ) : null}
-                </div>
-                {canEdit ? (
-                  <div className="flex items-center gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => setEditor(row)}>
-                      <PencilIcon className="size-3.5" />
-                      <T>Edit</T>
-                    </Button>
-                    {row.task.schedule.type !== "webhook" && !completedOnce ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          pendingTaskId === row.task.id || row.task.lastRunStatus === "running"
-                        }
-                        onClick={() => void runNow()}
-                      >
-                        <PlayIcon className="size-3.5" />
-                        <T>Run now</T>
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-                {detailsOpen ? (
-                  <div className="space-y-2 rounded-lg bg-muted/40 px-3 py-2.5 text-sm">
-                    <p className="whitespace-pre-wrap wrap-break-word text-muted-foreground">
-                      {row.task.prompt}
-                    </p>
-                    {row.task.lastRunError ? (
-                      <p className="text-destructive">{row.task.lastRunError}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              <RunList
-                runs={runs}
-                selected={selectedRun}
-                loading={history.data === null}
-                error={history.error}
-                onRetry={history.refresh}
-                onSelect={(run) =>
-                  void navigate({
-                    to: "/scheduled",
-                    search: {
-                      environmentId: row.environmentId,
-                      taskId: row.task.id,
-                      runId: run.runId,
-                    },
-                  })
-                }
-              />
-            </div>
-          </aside>
+              <h2 className="px-4 pt-4 pb-2 text-sm font-semibold">
+                <T>Runs</T>
+              </h2>
+              <RunList {...runListProps} />
+            </aside>
+          </div>
         </div>
       ) : (
         <div

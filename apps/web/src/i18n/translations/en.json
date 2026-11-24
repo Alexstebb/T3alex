@@ -12864,5 +12864,14 @@
   "a2ddfe4453ba1106": "Extra run time {number}",
   "dbe33dd9ef0750bb": "Remove run time {time}",
   "9120e3146a9ec407": "Add run time",
-  "cb6af3b1f18e1069": "Back to runs"
+  "744900804efcf075": "The task and its schedule are removed. Chats from earlier runs are kept.",
+  "89584efbb3a30de3": "Delete task",
+  "b8736743b1ab48f3": "Mark as read",
+  "ea6e3133277fe5f2": "Mark as unread",
+  "8b4eabdfc58b5fa0": "Edit",
+  "2ca561694eb0463f": "Pause",
+  "4cbc7c43dd33c363": "Resume",
+  "da49b8271b9dffa0": "Delete",
+  "55c16b90d148827c": "Runs",
+  "aba29e77e52bca46": "Delete"
 }

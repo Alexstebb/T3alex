@@ -12862,5 +12862,14 @@
   "a2ddfe4453ba1106": "Extra körtid {number}",
   "dbe33dd9ef0750bb": "Ta bort körtiden {time}",
   "9120e3146a9ec407": "Lägg till körtid",
-  "cb6af3b1f18e1069": "Tillbaka till körningarna"
+  "744900804efcf075": "Uppgiften och dess schema tas bort. Chattar från tidigare körningar behålls.",
+  "89584efbb3a30de3": "Ta bort uppgift",
+  "b8736743b1ab48f3": "Markera som läst",
+  "ea6e3133277fe5f2": "Markera som oläst",
+  "8b4eabdfc58b5fa0": "Redigera",
+  "2ca561694eb0463f": "Pausa",
+  "4cbc7c43dd33c363": "Återuppta",
+  "da49b8271b9dffa0": "Ta bort",
+  "55c16b90d148827c": "Körningar",
+  "aba29e77e52bca46": "Ta bort"
 }
