@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
+import { resolveForkBrand } from "./DesktopForkBrand.ts";
 
 const defaultInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -38,6 +39,30 @@ const makeEnvironment = (
 ) => DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(layerEnvironment(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it.effect("gives a fork-branded build its own name, ids and T3 home", () =>
+    Effect.gen(function* () {
+      const branded = yield* makeEnvironment({
+        platform: "win32",
+        isPackaged: true,
+        homeDirectory: "/Users/alice",
+        forkBrand: resolveForkBrand("alex"),
+      });
+      assert.equal(branded.displayName, "T3 Code Alex");
+      assert.equal(branded.branding.baseName, "T3 Code Alex");
+      assert.equal(branded.appUserModelId, "com.t3tools.t3code.alex");
+      assert.equal(branded.baseDir, "/Users/alice/.t3-alex");
+      assert.equal(branded.stateDir, "/Users/alice/.t3-alex/userdata");
+      assert.isTrue(branded.skipProtocolRegistration);
+
+      const official = yield* makeEnvironment({ platform: "win32", isPackaged: true });
+      assert.equal(official.displayName, "T3 Code (Beta)");
+      assert.equal(official.appUserModelId, "com.t3tools.t3code");
+      assert.equal(official.baseDir, "/Users/alice/.t3");
+      assert.isFalse(official.skipProtocolRegistration);
+      assert.isUndefined(official.forkBrand);
+    }),
+  );
+
   it.effect("uses the packaged Windows server sidecar as the backend root", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment({

@@ -44,6 +44,7 @@ import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 import { resolveTaggedSourceVersion } from "./lib/tagged-source-version.ts";
+import { resolveForkBrand } from "./lib/fork-brand.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -64,6 +65,15 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
+// Local fork: T3CODE_FORK_BRAND builds a side-by-side app (scripts/lib/fork-brand.ts).
+const ForkBrandConfig = Config.String("T3CODE_FORK_BRAND").pipe(
+  Config.option,
+  Config.map((name) => resolveForkBrand(Option.getOrUndefined(name))),
+);
+// Local fork: package without the Rust resource monitor; the app then runs without its metrics.
+const SkipResourceMonitorConfig = Config.Boolean("T3CODE_DESKTOP_SKIP_RESOURCE_MONITOR").pipe(
+  Config.withDefault(false),
+);
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2029,9 +2039,10 @@ function windowsVswherePrerequisiteScript(arch: typeof BuildArch.Type): string {
 export const preflightWindowsDesktopBuild = Effect.fn("preflightWindowsDesktopBuild")(
   function* (input: { readonly arch: typeof BuildArch.Type; readonly bundlesWslRuntime: boolean }) {
     const rustTarget = resolveResourceMonitorRustTargets("win", input.arch)[0]!;
-    const reuseResourceMonitor = yield* Config.Boolean(
-      "T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR",
-    ).pipe(Config.withDefault(false));
+    const reuseResourceMonitor =
+      (yield* Config.Boolean("T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR").pipe(
+        Config.withDefault(false),
+      )) || (yield* SkipResourceMonitorConfig);
     const python = yield* resolvePythonForNodeGyp();
     const checks = yield* Effect.all(
       {
@@ -2865,6 +2876,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ];
     }
   }
+  const forkBrand = yield* ForkBrandConfig;
+  if (forkBrand) {
+    buildConfig.appId = forkBrand.appId;
+    buildConfig.productName = forkBrand.productName;
+    buildConfig.artifactName = `${forkBrand.artifactPrefix}-\${version}-\${arch}.\${ext}`;
+    // No app-update.yml: a branded build must never find an upstream feed.
+    buildConfig.publish = null;
+  }
 
   if (platform === "mac") {
     const path = yield* Path.Path;
@@ -3376,6 +3395,7 @@ export const validateWindowsPackagedPayload = Effect.fn(
   readonly targetArch: typeof BuildArch.Type;
   readonly appVersion: string;
   readonly expectWslRuntime?: boolean;
+  readonly expectResourceMonitor?: boolean;
   readonly fileLimit?: number;
   readonly verbose?: boolean;
 }) {
@@ -3462,7 +3482,7 @@ export const validateWindowsPackagedPayload = Effect.fn(
     "resource-monitor",
     resourceMonitorExecutableName("win"),
   );
-  if (!(yield* isFile(resourceMonitorPath))) {
+  if (input.expectResourceMonitor !== false && !(yield* isFile(resourceMonitorPath))) {
     return yield* new WindowsPackagedPayloadValidationError({
       reason: "resource-monitor-missing",
       packagedAppDir,
@@ -3853,13 +3873,16 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   if (options.platform !== "win") {
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   }
-  yield* stageResourceMonitor({
-    repoRoot,
-    stageResourcesDir,
-    platform: options.platform,
-    arch: options.arch,
-    verbose: options.verbose,
-  });
+  const skipResourceMonitor = yield* SkipResourceMonitorConfig;
+  if (!skipResourceMonitor) {
+    yield* stageResourceMonitor({
+      repoRoot,
+      stageResourcesDir,
+      platform: options.platform,
+      arch: options.arch,
+      verbose: options.verbose,
+    });
+  }
   if (options.platform === "linux") {
     for (const backend of ["kde", "hyprland"] as const)
       yield* stageLinuxCaptureHelper({
@@ -3957,8 +3980,9 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     options.platform === "win"
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
+  const forkBrand = yield* ForkBrandConfig;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: forkBrand?.packageName ?? "t3code",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
@@ -4148,9 +4172,10 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   if (options.platform === "win") {
     yield* validateWindowsPackagedPayload({
       stageDistDir,
-      appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
+      appExecutableName: `${forkBrand?.productName ?? resolveDesktopProductName(appVersion)}.exe`,
       targetArch: options.arch,
       appVersion,
+      expectResourceMonitor: !skipResourceMonitor,
       expectWslRuntime: bundlesWslRuntime({
         platform: options.platform,
         runtimeArchivePath: options.wslRuntime,

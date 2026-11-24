@@ -21,6 +21,7 @@ import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopForkBrand from "../app/DesktopForkBrand.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdatePolicy from "./DesktopUpdatePolicy.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
@@ -115,6 +116,30 @@ describe("DesktopUpdates", () => {
       assert.isFalse(unmarked.canInstallUpdates);
     }),
   );
+
+  it.effect("never checks for updates in a fork-branded build, even with a feed", () => {
+    const harness = makeHarness({
+      env: { T3CODE_DESKTOP_MOCK_UPDATES: "true" },
+      policy: {
+        ...DesktopUpdatePolicy.unmanagedUpdatePolicy,
+        feedUrl: "https://updates.example.test/feed",
+      },
+      forkBrand: DesktopForkBrand.resolveForkBrand("alex"),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        const state = yield* updates.getState;
+        assert.equal(state.enabled, false);
+        assert.equal(state.status, "disabled");
+        assert.equal(state.message, "Automatic updates are turned off in this build.");
+        assert.equal(harness.checkCount(), 0);
+      }),
+    ).pipe(Effect.provide(harness.layer));
+  });
 
   it.effect("keeps the disabled reason available after configuration and channel changes", () => {
     const harness = makeHarness({ env: { T3CODE_DISABLE_AUTO_UPDATE: "true" } });

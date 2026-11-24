@@ -6,6 +6,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
+import { resolveForkBrand } from "./DesktopForkBrand.ts";
 import { clearStaleGpuCaches, resolveUserDataPath } from "./DesktopUserData.ts";
 
 it.effect.each(["t3code", "T3 Code (Alpha)"])(
@@ -60,6 +61,26 @@ it.effect("uses T3CODE_DESKTOP_USER_DATA_DIR instead of the installed app's prof
     assert.equal(resolved, override);
     assert.isFalse(yield* fs.exists(path.join(override, "Local State")));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "gives a fork-branded build its own profile without copying the installed app's keys",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-v2-profile-" });
+      yield* fs.makeDirectory(path.join(directory, "t3code-v2"), { recursive: true });
+      yield* fs.writeFileString(path.join(directory, "t3code-v2", "Local State"), "{}");
+      const resolved = yield* resolveUserDataPath({
+        appDataDirectory: directory,
+        isDevelopment: false,
+        platform: "win32",
+        forkBrand: resolveForkBrand("alex"),
+      });
+      assert.equal(resolved, path.join(directory, "t3code-alex"));
+      assert.isFalse(yield* fs.exists(resolved));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 const gpuCacheDirectories = [

@@ -5,6 +5,8 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import type { DesktopForkBrand } from "./DesktopForkBrand.ts";
+
 export class DesktopUserDataInitializationError extends Schema.TaggedError<DesktopUserDataInitializationError>()(
   "DesktopUserDataInitializationError",
   {
@@ -38,12 +40,16 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
     readonly isDevelopment: boolean;
     readonly platform: NodeJS.Platform;
     readonly userDataDirectoryOverride?: Option.Option<string>;
+    readonly forkBrand?: DesktopForkBrand | undefined;
   }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     // Local fork: a side-by-side build keeps its own profile instead of the installed app's.
     if (input.userDataDirectoryOverride && Option.isSome(input.userDataDirectoryOverride)) {
       return path.resolve(input.userDataDirectoryOverride.value);
+    }
+    if (input.forkBrand) {
+      return path.join(input.appDataDirectory, input.forkBrand.userDataDirName);
     }
     const names = input.isDevelopment
       ? { current: "t3code-dev", legacy: "T3 Code (Dev)" }

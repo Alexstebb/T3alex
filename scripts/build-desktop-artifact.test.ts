@@ -554,6 +554,33 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect("gives a fork-branded build its own ids and no update feed", () =>
+    Effect.gen(function* () {
+      const branded = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+
+      assert.equal(branded.appId, "com.t3tools.t3code.alex");
+      assert.equal(branded.productName, "T3 Code Alex");
+      assert.equal(branded.artifactName, "T3-Code-Alex-${version}-${arch}.${ext}");
+      assert.isNull(branded.publish);
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: { GITHUB_REPOSITORY: "pingdotgg/t3code", T3CODE_FORK_BRAND: "alex" },
+          }),
+        ),
+      ),
+    ),
+  );
+
   it.effect("names the Electron window class in the Linux desktop entry", () =>
     Effect.gen(function* () {
       const linux = yield* createBuildConfig(

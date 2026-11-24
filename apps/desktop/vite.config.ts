@@ -25,6 +25,8 @@ const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
+  // Local fork: see scripts/lib/fork-brand.ts.
+  __T3CODE_FORK_BRAND__: JSON.stringify(process.env.T3CODE_FORK_BRAND?.trim() ?? ""),
 };
 
 const PAGE_WORLD_MODULE = /[\\/]src[\\/]preview[\\/]PageWorld\.ts$/;

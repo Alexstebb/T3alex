@@ -13,6 +13,7 @@ import * as Path from "effect/Path";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
+import * as DesktopForkBrand from "./DesktopForkBrand.ts";
 import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
@@ -28,6 +29,7 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
+  readonly forkBrand?: DesktopForkBrand.DesktopForkBrand | undefined;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -45,6 +47,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
     readonly userDataDirectoryOverride: Option.Option<string>;
+    readonly forkBrand: DesktopForkBrand.DesktopForkBrand | undefined;
     readonly skipProtocolRegistration: boolean;
     readonly baseDir: string;
     readonly stateDir: string;
@@ -103,8 +106,13 @@ function resolveDesktopAppStageLabel(input: {
 export function resolveDesktopAppBranding(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
+  readonly forkBrand?: DesktopForkBrand.DesktopForkBrand | undefined;
 }): DesktopAppBranding {
   const stageLabel = resolveDesktopAppStageLabel(input);
+  const forkBrand = input.forkBrand ?? DesktopForkBrand.bakedForkBrand;
+  if (forkBrand) {
+    return { baseName: forkBrand.productName, stageLabel, displayName: forkBrand.productName };
+  }
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
@@ -150,6 +158,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
+  const forkBrand = input.forkBrand ?? DesktopForkBrand.bakedForkBrand;
   const appDataDirectory =
     input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>
@@ -162,6 +171,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     homeDirectory,
     joinPath: path.join,
     t3Home: config.t3Home,
+    ...(forkBrand ? { defaultDirName: forkBrand.t3HomeDirName } : {}),
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -172,6 +182,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const branding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,
+    forkBrand,
   });
   const displayName = branding.displayName;
   const stateDir = resolveDesktopStateDir({
@@ -199,7 +210,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     homeDirectory,
     appDataDirectory,
     userDataDirectoryOverride: config.userDataDirectoryOverride,
-    skipProtocolRegistration: config.skipProtocolRegistration,
+    forkBrand,
+    // A branded build leaves t3code:// to the official app.
+    skipProtocolRegistration: config.skipProtocolRegistration || forkBrand !== undefined,
     baseDir,
     stateDir,
     desktopSettingsPath: path.join(stateDir, "desktop-settings.json"),
@@ -231,8 +244,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
-    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
+    appUserModelId: Option.getOrElse(
+      config.appUserModelIdOverride,
+      () => forkBrand?.appId ?? (isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code"),
     ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     linuxApplicationsDir,

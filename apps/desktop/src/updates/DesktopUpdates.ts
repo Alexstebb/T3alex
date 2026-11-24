@@ -351,7 +351,12 @@ function getAutoUpdateDisabledReason(args: {
   isDebPackage: boolean;
   disabledByEnv: boolean;
   hasUpdateFeedConfig: boolean;
+  forkBranded?: boolean;
 }): string | null {
+  // Local fork: a branded build must never install an upstream release over itself.
+  if (args.forkBranded) {
+    return "Automatic updates are turned off in this build.";
+  }
   if (args.policy.mode === "off") {
     return args.policy.message ?? "Updates are turned off on this machine.";
   }
@@ -493,6 +498,7 @@ export const make = Effect.gen(function* () {
         isDebPackage,
         disabledByEnv: config.disableAutoUpdate,
         hasUpdateFeedConfig: hasFeedConfig,
+        forkBranded: environment.forkBrand !== undefined,
       }),
     );
   });
