@@ -1,3 +1,5 @@
+> **Personal fork** of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). Read [FORK.md](FORK.md) for what differs and how to build it.
+
 <p align="center">
   <a href="https://t3.codes">
     <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="T3 Code logo" />
