@@ -175,7 +175,14 @@ or desktop profile.
 Choose **Link folder** from a section's menu to use an existing folder as its project. The
 project's chats appear in the section unless you move them elsewhere. Click the **+** beside
 the section name to start a chat there, or choose the section in the new-thread picker. Chats
-started in a linked section use the linked folder as their project.
+started in a linked section use the linked folder as their project. A folder can be linked to
+only one section.
+
+To start a section's chats in a folder without pulling that folder's other chats into the
+section, choose **Start chats in folder…** instead. Several sections can share the same folder
+this way, and each keeps the chats started from it. A linked folder takes precedence. The **+**
+tooltip names the folder a new chat will use. If that folder's project is deleted or archived,
+the section shows a warning sign, and **+** asks you to choose another folder.
 
 ## Settle finished work
 

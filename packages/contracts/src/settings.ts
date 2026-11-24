@@ -422,6 +422,9 @@ export const SidebarCustomSection = Schema.Struct({
   threadKeys: Schema.Array(Schema.String),
   projectKey: Schema.optionalKey(Schema.String),
   excludedThreadKeys: Schema.optionalKey(Schema.Array(Schema.String)),
+  // The project new chats from this section start in. Unlike projectKey it pulls in no
+  // threads, and any number of sections may share it.
+  chatProjectKey: Schema.optionalKey(Schema.String),
 });
 export type SidebarCustomSection = typeof SidebarCustomSection.Type;
 export const SidebarCustomSections = Schema.Array(SidebarCustomSection);

@@ -12856,5 +12856,12 @@
   "55c16b90d148827c": "Ejecuciones",
   "aba29e77e52bca46": "Eliminar",
   "22a1b453858c6290": "Mostrar ejecuciones",
-  "02e93b3c0befe178": "Ocultar ejecuciones"
+  "02e93b3c0befe178": "Ocultar ejecuciones",
+  "5cb772ef865baadd": "La carpeta de esta sección ya no existe como proyecto.",
+  "ba82853d4a4f5eec": "Nuevo chat en {section} · {folder}",
+  "6848daa11e7b0a29": "Iniciar chats en una carpeta…",
+  "73fd5fcbc9ec5336": "Dejar de iniciar chats en una carpeta",
+  "167bb05a2216595f": "Iniciar chats nuevos en una carpeta",
+  "f7739980ddc64032": "Usar carpeta",
+  "8dd9cdf76f886aba": "La carpeta «{folder}» ya no existe como proyecto."
 }

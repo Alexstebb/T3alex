@@ -135,6 +135,23 @@ describe("ClientSettings terminal close confirmation", () => {
   });
 });
 
+describe("ClientSettings sidebar sections", () => {
+  it("decodes sections saved before chatProjectKey and keeps the key when set", () => {
+    const older = { id: "a", name: "Kunder", collapsed: false, threadKeys: ["local:t1"] };
+    const withChatFolder = { ...older, id: "b", chatProjectKey: "local:claude" };
+    const { sidebarCustomSections } = decodeClientSettings({
+      sidebarCustomSections: [older, withChatFolder],
+    });
+    expect(sidebarCustomSections).toEqual([older, withChatFolder]);
+    expect("chatProjectKey" in sidebarCustomSections[0]!).toBe(false);
+    expect(
+      encodeClientSettings(decodeClientSettings({ sidebarCustomSections: [older] })),
+    ).toMatchObject({
+      sidebarCustomSections: [older],
+    });
+  });
+});
+
 describe("ServerSettings usage price overrides", () => {
   const prices = { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 };
 

@@ -1,5 +1,12 @@
 import { useGT } from "gt-react";
-import { ChevronDownIcon, EllipsisIcon, FolderIcon, LayersIcon, PlusIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  EllipsisIcon,
+  FolderIcon,
+  LayersIcon,
+  PlusIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
@@ -8,18 +15,27 @@ import { Dialog, DialogClose, DialogFooter, DialogPopup, DialogTitle } from "../
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { sidebarSectionRowId, type CustomSidebarSection } from "./sidebarSections";
+import {
+  sidebarSectionRowId,
+  type CustomSidebarSection,
+  type SidebarSectionFolderMode,
+} from "./sidebarSections";
 
 export function SidebarCustomSectionHeader(props: {
   section: CustomSidebarSection;
   isDropTarget: boolean;
   count: number;
+  /** The project new chats start in, when there is one and it still exists. */
+  folderName: string | undefined;
+  folderMissing: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onToggle: () => void;
   onNewChat: () => void;
   onLinkFolder: () => void;
   onUnlinkFolder: () => void;
+  onChooseChatFolder: () => void;
+  onClearChatFolder: () => void;
   onRename: () => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -27,6 +43,9 @@ export function SidebarCustomSectionHeader(props: {
   const gt = useGT();
   const { section } = props;
   const rowId = sidebarSectionRowId(section.id);
+  const linked = section.projectKey !== undefined;
+  const newChatLabel = gt("New chat in {section}", { section: section.name });
+  const missingLabel = gt("This section's folder no longer exists as a project.");
 
   return (
     <li
@@ -44,12 +63,28 @@ export function SidebarCustomSectionHeader(props: {
         onClick={props.onToggle}
         className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-(--sidebar-row-content-inset) text-left text-sidebar-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        {section.projectKey !== undefined ? (
+        {linked ? (
           <FolderIcon aria-hidden className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
         ) : (
           <LayersIcon aria-hidden className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
         )}
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{section.name}</span>
+        {props.folderMissing ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  role="img"
+                  aria-label={missingLabel}
+                  className="flex shrink-0 text-sidebar-muted-foreground"
+                />
+              }
+            >
+              <TriangleAlertIcon aria-hidden className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup>{missingLabel}</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {section.collapsed && props.count > 0 ? (
           <span aria-hidden className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground">
             {props.count}
@@ -70,14 +105,21 @@ export function SidebarCustomSectionHeader(props: {
               data-sidebar-action-for={rowId}
               variant="ghost-muted"
               size="icon-xs"
-              aria-label={gt("New chat in {section}", { section: section.name })}
+              aria-label={newChatLabel}
               onClick={props.onNewChat}
             />
           }
         >
           <PlusIcon aria-hidden />
         </TooltipTrigger>
-        <TooltipPopup>{gt("New chat in {section}", { section: section.name })}</TooltipPopup>
+        <TooltipPopup>
+          {props.folderName === undefined
+            ? newChatLabel
+            : gt("New chat in {section} · {folder}", {
+                section: section.name,
+                folder: props.folderName,
+              })}
+        </TooltipPopup>
       </Tooltip>
       <Menu>
         <MenuTrigger
@@ -95,10 +137,17 @@ export function SidebarCustomSectionHeader(props: {
         <MenuPopup align="end">
           <MenuItem onClick={props.onRename}>{gt("Rename section")}</MenuItem>
           <MenuItem onClick={props.onLinkFolder}>
-            {section.projectKey === undefined ? gt("Link folder") : gt("Change linked folder")}
+            {linked ? gt("Change linked folder") : gt("Link folder")}
           </MenuItem>
-          {section.projectKey !== undefined ? (
+          {linked ? (
             <MenuItem onClick={props.onUnlinkFolder}>{gt("Unlink folder")}</MenuItem>
+          ) : (
+            <MenuItem onClick={props.onChooseChatFolder}>{gt("Start chats in folder…")}</MenuItem>
+          )}
+          {!linked && section.chatProjectKey !== undefined ? (
+            <MenuItem onClick={props.onClearChatFolder}>
+              {gt("Stop starting chats in a folder")}
+            </MenuItem>
           ) : null}
           <MenuItem disabled={!props.canMoveUp} onClick={() => props.onMove(-1)}>
             {gt("Move up")}
@@ -116,6 +165,7 @@ export function SidebarCustomSectionHeader(props: {
 
 export function SidebarSectionFolderDialog(props: {
   initialPath: string;
+  mode: SidebarSectionFolderMode;
   onBrowse?: () => Promise<string | null>;
   onClose: () => void;
   onLink: (path: string) => Promise<string | null>;
@@ -133,7 +183,9 @@ export function SidebarSectionFolderDialog(props: {
       }}
     >
       <DialogPopup initialFocus={input}>
-        <DialogTitle>{gt("Link a project folder")}</DialogTitle>
+        <DialogTitle>
+          {props.mode === "link" ? gt("Link a project folder") : gt("Start new chats in a folder")}
+        </DialogTitle>
         <form
           className="flex flex-col gap-4"
           onSubmit={(event) => {
@@ -192,7 +244,7 @@ export function SidebarSectionFolderDialog(props: {
               {gt("Cancel")}
             </DialogClose>
             <Button type="submit" disabled={busy || !path.trim()}>
-              {gt("Link folder")}
+              {props.mode === "link" ? gt("Link folder") : gt("Use folder")}
             </Button>
           </DialogFooter>
         </form>

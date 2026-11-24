@@ -12870,5 +12870,12 @@
   "55c16b90d148827c": "Runs",
   "aba29e77e52bca46": "Delete",
   "22a1b453858c6290": "Show runs",
-  "02e93b3c0befe178": "Hide runs"
+  "02e93b3c0befe178": "Hide runs",
+  "5cb772ef865baadd": "This section's folder no longer exists as a project.",
+  "ba82853d4a4f5eec": "New chat in {section} · {folder}",
+  "6848daa11e7b0a29": "Start chats in folder…",
+  "73fd5fcbc9ec5336": "Stop starting chats in a folder",
+  "167bb05a2216595f": "Start new chats in a folder",
+  "f7739980ddc64032": "Use folder",
+  "8dd9cdf76f886aba": "The folder “{folder}” no longer exists as a project."
 }

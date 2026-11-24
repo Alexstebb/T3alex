@@ -12861,5 +12861,12 @@
   "55c16b90d148827c": "Exécutions",
   "aba29e77e52bca46": "Supprimer",
   "22a1b453858c6290": "Afficher les exécutions",
-  "02e93b3c0befe178": "Masquer les exécutions"
+  "02e93b3c0befe178": "Masquer les exécutions",
+  "5cb772ef865baadd": "Le dossier de cette section n’existe plus en tant que projet.",
+  "ba82853d4a4f5eec": "Nouveau chat dans {section} · {folder}",
+  "6848daa11e7b0a29": "Démarrer les chats dans un dossier…",
+  "73fd5fcbc9ec5336": "Ne plus démarrer les chats dans un dossier",
+  "167bb05a2216595f": "Démarrer les nouveaux chats dans un dossier",
+  "f7739980ddc64032": "Utiliser le dossier",
+  "8dd9cdf76f886aba": "Le dossier « {folder} » n’existe plus en tant que projet."
 }

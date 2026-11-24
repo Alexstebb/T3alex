@@ -44,16 +44,22 @@ import {
 } from "./SidebarCustomSection";
 import type { SidebarDraftBlock } from "./SidebarDraftBlock";
 import {
+  closeSectionFolderDialog,
   customSectionAtPoint,
   linkSidebarSectionProject,
   moveThreadsToSidebarSection,
+  openSectionFolderDialog,
+  setSidebarSectionChatProject,
   setSidebarSections,
+  sidebarSectionChatProject,
   sidebarSectionRowId,
+  useSectionFolderDialogRequest,
   useSidebarSectionThreads,
   useStartSidebarSectionChat,
   type CustomSectionThreads,
   type CustomSidebarSection,
   type SidebarSectionDragRole,
+  type SidebarSectionFolderMode,
   type SidebarSectionIndex,
 } from "./sidebarSections";
 
@@ -89,7 +95,12 @@ export function useSidebarCustomSections(input: {
   const gt = useGT();
   const messages = useMessages();
   const { isMobile, setOpenMobile } = useSidebar();
-  const [folderSection, setFolderSection] = useState<CustomSidebarSection | null>(null);
+  const projects = useProjects();
+  const folderRequest = useSectionFolderDialogRequest();
+  const folderSection =
+    folderRequest === null
+      ? null
+      : (sections.find((section) => section.id === folderRequest.sectionId) ?? null);
   const [nameDialog, setNameDialog] = useState<{
     section: CustomSidebarSection | null;
     threadKeys: readonly string[];
@@ -194,8 +205,10 @@ export function useSidebarCustomSections(input: {
     unassignedDraftIds,
     renderedThreadKeys,
     layoutKey: threads.layoutKey,
-    folderSection,
-    closeFolderDialog: () => setFolderSection(null),
+    folderDialog:
+      folderSection === null || folderRequest === null
+        ? null
+        : { section: folderSection, mode: folderRequest.mode },
     nameDialog,
     closeNameDialog: () => setNameDialog(null),
     saveSectionName,
@@ -255,14 +268,31 @@ export function useSidebarCustomSections(input: {
       dropTargetId: string | null,
     ): ReactNode[] => {
       const rows: ReactNode[] = [];
+      const connected = new Set(input.connectedEnvironmentIds);
       for (const [index, group] of threads.groups.entries()) {
         const { section, count } = group;
+        const target = sidebarSectionChatProject(section, (ref) => {
+          const key = scopedProjectKey(ref);
+          return (
+            projects.find(
+              (project) =>
+                scopedProjectKey(scopeProjectRef(project.environmentId, project.id)) === key,
+            ) ?? null
+          );
+        });
         rows.push(
           <SidebarCustomSectionHeader
             key={section.id}
             section={section}
             isDropTarget={dropTargetId === section.id}
             count={count}
+            folderName={target?.available ? target.project?.title : undefined}
+            // Projects of an environment that is not connected yet are unknown, not missing.
+            folderMissing={
+              target !== null &&
+              !target.available &&
+              (target.ref === null || connected.has(target.ref.environmentId))
+            }
             canMoveUp={index > 0}
             canMoveDown={index < threads.groups.length - 1}
             onToggle={() =>
@@ -274,7 +304,13 @@ export function useSidebarCustomSections(input: {
             }
             onRename={() => setNameDialog({ section, threadKeys: [] })}
             onNewChat={() => startChat(section)}
-            onLinkFolder={() => setFolderSection(section)}
+            onLinkFolder={() => openSectionFolderDialog(section.id, "link")}
+            onChooseChatFolder={() => openSectionFolderDialog(section.id, "chat")}
+            onClearChatFolder={() =>
+              setSidebarSections((current) =>
+                setSidebarSectionChatProject(current, section.id, undefined),
+              )
+            }
             onUnlinkFolder={() =>
               setSidebarSections((current) =>
                 linkSidebarSectionProject(current, section.id, undefined),
@@ -319,11 +355,13 @@ export function SidebarCustomSectionDialogs({
 }) {
   return (
     <>
-      {sections.folderSection ? (
+      {sections.folderDialog ? (
         <SectionFolderDialog
-          section={sections.folderSection}
+          key={`${sections.folderDialog.section.id}:${sections.folderDialog.mode}`}
+          section={sections.folderDialog.section}
+          mode={sections.folderDialog.mode}
           sections={sections.sectionIndex.sections}
-          onClose={sections.closeFolderDialog}
+          onClose={closeSectionFolderDialog}
         />
       ) : null}
       {sections.nameDialog ? (
@@ -339,23 +377,24 @@ export function SidebarCustomSectionDialogs({
 
 function SectionFolderDialog(props: {
   section: CustomSidebarSection;
+  mode: SidebarSectionFolderMode;
   sections: readonly CustomSidebarSection[];
   onClose: () => void;
 }) {
-  const { section, sections } = props;
+  const { section, sections, mode } = props;
   const gt = useGT();
   const messages = useMessages();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const createSectionProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
-  const linkedProject =
-    section.projectKey === undefined
+  const currentKey = mode === "link" ? section.projectKey : section.chatProjectKey;
+  const currentProject =
+    currentKey === undefined
       ? undefined
       : projects.find(
           (project) =>
-            scopedProjectKey(scopeProjectRef(project.environmentId, project.id)) ===
-            section.projectKey,
+            scopedProjectKey(scopeProjectRef(project.environmentId, project.id)) === currentKey,
         );
   const linkFolder = async (path: string) => {
     const environmentId = primaryEnvironmentId;
@@ -371,7 +410,10 @@ function SectionFolderDialog(props: {
     if (existing?.archivedAt != null) return gt("Restore the project before linking it.");
     const projectId = existing?.id ?? newProjectId();
     const projectKey = scopedProjectKey(scopeProjectRef(environmentId, projectId));
-    if (sections.some((item) => item.id !== section.id && item.projectKey === projectKey)) {
+    if (
+      mode === "link" &&
+      sections.some((item) => item.id !== section.id && item.projectKey === projectKey)
+    ) {
       return gt("This project is already linked to a section.");
     }
     if (!existing) {
@@ -399,12 +441,17 @@ function SectionFolderDialog(props: {
       }
       await waitForProject(scopeProjectRef(environmentId, projectId));
     }
-    setSidebarSections((current) => linkSidebarSectionProject(current, section.id, projectKey));
+    setSidebarSections((current) =>
+      mode === "link"
+        ? linkSidebarSectionProject(current, section.id, projectKey)
+        : setSidebarSectionChatProject(current, section.id, projectKey),
+    );
     return null;
   };
   return (
     <SidebarSectionFolderDialog
-      initialPath={linkedProject?.workspaceRoot ?? ""}
+      initialPath={currentProject?.archivedAt == null ? (currentProject?.workspaceRoot ?? "") : ""}
+      mode={mode}
       {...(isElectron
         ? { onBrowse: async () => (await readLocalApi()?.dialogs.pickFolder()) ?? null }
         : {})}

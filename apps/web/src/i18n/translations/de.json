@@ -12861,5 +12861,12 @@
   "55c16b90d148827c": "Ausführungen",
   "aba29e77e52bca46": "Löschen",
   "22a1b453858c6290": "Ausführungen anzeigen",
-  "02e93b3c0befe178": "Ausführungen ausblenden"
+  "02e93b3c0befe178": "Ausführungen ausblenden",
+  "5cb772ef865baadd": "Der Ordner dieses Abschnitts existiert nicht mehr als Projekt.",
+  "ba82853d4a4f5eec": "Neuer Chat in {section} · {folder}",
+  "6848daa11e7b0a29": "Chats in Ordner starten…",
+  "73fd5fcbc9ec5336": "Chats nicht mehr in einem Ordner starten",
+  "167bb05a2216595f": "Neue Chats in einem Ordner starten",
+  "f7739980ddc64032": "Ordner verwenden",
+  "8dd9cdf76f886aba": "Der Ordner „{folder}“ existiert nicht mehr als Projekt."
 }

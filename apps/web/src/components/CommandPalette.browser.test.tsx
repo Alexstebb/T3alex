@@ -1,5 +1,10 @@
 import { threadKey } from "@t3tools/client-runtime/state/entities";
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedProjectKey,
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -13,6 +18,7 @@ import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSett
 import { makeThreadFixture } from "../test-fixtures";
 import type { Project, Thread } from "../types";
 import { CommandPalette } from "./CommandPalette";
+import { toastManager } from "./ui/toast";
 import type { DraftId } from "../composerDraftStore";
 
 const entities = vi.hoisted(() => ({
@@ -174,6 +180,72 @@ describe("CommandPalette open intents", () => {
     await expect.element(page.getByRole("option", { name: /customer-workspace/ })).toBeVisible();
     await userEvent.click(section);
     await vi.waitFor(() => expect(entities.handleNewThread).toHaveBeenCalledExactlyOnceWith(ref));
+  });
+
+  it("starts a section's chat in its chat folder and keeps it in that section", async () => {
+    const project = makeProject("claude");
+    setup({ projects: [project] });
+    const threadId = ThreadId.make("palette-section-chat");
+    entities.handleNewThread.mockResolvedValueOnce({ draftId: "draft" as DraftId, threadId });
+    using cleanup = new DisposableStack();
+    const previousSettings = getClientSettings();
+    cleanup.defer(() => __setClientSettingsForTests(previousSettings));
+    const ref = scopeProjectRef(project.environmentId, project.id);
+    __setClientSettingsForTests({
+      ...previousSettings,
+      sidebarCustomSections: [
+        { id: "fixed", name: "Faste agenter", collapsed: false, threadKeys: [] },
+        {
+          id: "clients",
+          name: "Kunder",
+          collapsed: false,
+          threadKeys: [],
+          chatProjectKey: scopedProjectKey(ref),
+        },
+      ],
+    });
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    openCommandPalette({ open: "new-thread-in" });
+    await userEvent.click(page.getByRole("option", { name: /Kunder/ }));
+    await vi.waitFor(() => expect(entities.handleNewThread).toHaveBeenCalledExactlyOnceWith(ref));
+    await vi.waitFor(() =>
+      expect(
+        getClientSettings().sidebarCustomSections.map((section) => section.threadKeys),
+      ).toEqual([[], [scopedThreadKey(scopeThreadRef(project.environmentId, threadId))]]),
+    );
+  });
+
+  it("says when a section's chat folder no longer exists instead of starting a chat", async () => {
+    setup({ projects: [] });
+    using add = vi.spyOn(toastManager, "add");
+    using cleanup = new DisposableStack();
+    const previousSettings = getClientSettings();
+    cleanup.defer(() => __setClientSettingsForTests(previousSettings));
+    __setClientSettingsForTests({
+      ...previousSettings,
+      sidebarCustomSections: [
+        {
+          id: "clients",
+          name: "Kunder",
+          collapsed: false,
+          threadKeys: [],
+          chatProjectKey: scopedProjectKey(
+            scopeProjectRef(EnvironmentId.make("local"), ProjectId.make("deleted")),
+          ),
+        },
+      ],
+    });
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    openCommandPalette({ open: "new-thread-in" });
+    await userEvent.click(page.getByRole("option", { name: /Kunder/ }));
+    await vi.waitFor(() =>
+      expect(add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "This section's folder no longer exists as a project.",
+        }),
+      ),
+    );
+    expect(entities.handleNewThread).not.toHaveBeenCalled();
   });
 
   it("highlights the first project when New thread in... opens from the root list", async () => {

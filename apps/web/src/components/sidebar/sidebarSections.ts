@@ -19,6 +19,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
+import { create } from "zustand";
 
 import { getLocalStorageItem, removeLocalStorageItem } from "../../hooks/useLocalStorage";
 import {
@@ -151,6 +152,58 @@ export function linkSidebarSectionProject(
   });
 }
 
+export function setSidebarSectionChatProject(
+  sections: readonly CustomSidebarSection[],
+  sectionId: string,
+  chatProjectKey: string | undefined,
+) {
+  return sections.map((section): CustomSidebarSection => {
+    if (section.id !== sectionId || section.chatProjectKey === chatProjectKey) return section;
+    const { chatProjectKey: _old, ...rest } = section;
+    return chatProjectKey === undefined ? rest : { ...rest, chatProjectKey };
+  });
+}
+
+/** "link" sets the section's linked project, "chat" the project its new chats start in. */
+export type SidebarSectionFolderMode = "link" | "chat";
+
+const useSectionFolderDialogStore = create<{
+  readonly request: { readonly sectionId: string; readonly mode: SidebarSectionFolderMode } | null;
+}>(() => ({ request: null }));
+
+export function useSectionFolderDialogRequest() {
+  return useSectionFolderDialogStore((state) => state.request);
+}
+
+// A store rather than sidebar state, so the command palette can open the dialog too.
+export function openSectionFolderDialog(sectionId: string, mode: SidebarSectionFolderMode) {
+  useSectionFolderDialogStore.setState({ request: { sectionId, mode } });
+}
+
+export function closeSectionFolderDialog() {
+  useSectionFolderDialogStore.setState({ request: null });
+}
+
+/**
+ * The project a section's new chats start in: its linked project, else its chat folder.
+ * `available` is false when that project was deleted or archived.
+ */
+export function sidebarSectionChatProject<
+  P extends { readonly workspaceRoot: string; readonly archivedAt?: string | null | undefined },
+>(section: CustomSidebarSection, findProject: (ref: ScopedProjectRef) => P | null) {
+  const key = section.projectKey ?? section.chatProjectKey;
+  if (key === undefined) return null;
+  const mode: SidebarSectionFolderMode = section.projectKey !== undefined ? "link" : "chat";
+  const ref = parseScopedProjectKey(key);
+  const project = ref === null ? null : findProject(ref);
+  return {
+    ref,
+    project,
+    mode,
+    available: ref !== null && project !== null && project.archivedAt == null,
+  };
+}
+
 export function moveThreadsToSidebarSection(
   sections: readonly CustomSidebarSection[],
   threadKeys: readonly string[],
@@ -188,10 +241,24 @@ export function useStartSidebarSectionChat(handleNewThread: NewThreadHandler) {
   const { openScratchProject, scratchEnvironmentId } = useScratchProject();
   return async (section: CustomSidebarSection, fallback: ScopedProjectRef | null) => {
     let workspace = fallback;
-    if (section.projectKey !== undefined) {
-      const linked = parseScopedProjectKey(section.projectKey);
-      const project = linked === null ? null : readProject(linked);
-      workspace = project && project.archivedAt == null ? linked : null;
+    const target = sidebarSectionChatProject(section, readProject);
+    if (target !== null) {
+      if (!target.available || target.ref === null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Could not start a chat in this section"),
+            description: target.project
+              ? gt("The folder “{folder}” no longer exists as a project.", {
+                  folder: target.project.workspaceRoot,
+                })
+              : gt("This section's folder no longer exists as a project."),
+          }),
+        );
+        openSectionFolderDialog(section.id, target.mode);
+        return;
+      }
+      workspace = target.ref;
     } else {
       const scratch = scratchEnvironmentId(fallback?.environmentId ?? null);
       if (scratch !== null) {

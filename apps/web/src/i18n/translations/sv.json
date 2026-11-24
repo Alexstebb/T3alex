@@ -12868,5 +12868,12 @@
   "55c16b90d148827c": "Körningar",
   "aba29e77e52bca46": "Ta bort",
   "22a1b453858c6290": "Visa körningar",
-  "02e93b3c0befe178": "Dölj körningar"
+  "02e93b3c0befe178": "Dölj körningar",
+  "5cb772ef865baadd": "Sektionens mapp finns inte längre som projekt.",
+  "ba82853d4a4f5eec": "Ny chatt i {section} · {folder}",
+  "6848daa11e7b0a29": "Starta chattar i mapp…",
+  "73fd5fcbc9ec5336": "Sluta starta chattar i en mapp",
+  "167bb05a2216595f": "Starta nya chattar i en mapp",
+  "f7739980ddc64032": "Använd mapp",
+  "8dd9cdf76f886aba": "Mappen ”{folder}” finns inte längre som projekt."
 }

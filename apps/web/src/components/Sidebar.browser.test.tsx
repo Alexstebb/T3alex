@@ -1,6 +1,7 @@
 import appCss from "../index.css?inline";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import {
+  scopedProjectKey,
   scopeProjectRef,
   scopeThreadRef,
   scopedThreadKey,
@@ -42,6 +43,7 @@ import Sidebar from "./Sidebar";
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
 import { SidebarProvider } from "./ui/sidebar";
+import { toastManager } from "./ui/toast";
 
 vi.mock(import("../state/olderSettledShelf"), async (original) => {
   const actual = await original();
@@ -636,6 +638,247 @@ it("links an existing folder to a section and starts its chat with the plus", as
   );
   await userEvent.click(screen.getByRole("button", { name: "New thread", exact: true }));
   expect(openCommandPalette).toHaveBeenLastCalledWith({ open: "new-thread-in" });
+});
+
+describe("section chat folders", () => {
+  const local = EnvironmentId.make("local");
+  const shared = project("claude");
+  const sharedKey = scopedProjectKey(scopeProjectRef(shared.environmentId, shared.id));
+
+  async function renderSections(
+    sections: ReturnType<typeof getClientSettings>["sidebarCustomSections"],
+    options: {
+      projects?: readonly Project[];
+      readProject?: (ref: { projectId: ProjectId }) => Project | null;
+    } = {},
+  ) {
+    const stack = new DisposableStack();
+    const projects = options.projects ?? [shared];
+    vi.mocked(useProjects).mockReturnValue([...projects]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+    stack.use(vi.spyOn(environmentHooks, "usePrimaryEnvironmentId").mockReturnValue(local));
+    stack.use(vi.spyOn(environmentHooks, "useConnectedEnvironmentIds").mockReturnValue([local]));
+    stack.use(
+      vi
+        .spyOn(projectEntities, "readProject")
+        .mockImplementation(
+          options.readProject ??
+            ((ref) => projects.find((candidate) => candidate.id === ref.projectId) ?? null),
+        ),
+    );
+    let created = 0;
+    const handleNewThread = vi.fn().mockImplementation(async () => {
+      created += 1;
+      return {
+        draftId: DraftId.make(`draft-${created}`),
+        threadId: ThreadId.make(`chat-${created}`),
+      };
+    });
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: null,
+      defaultProjectFallbackReady: true,
+      handleNewThread,
+      routeDraftId: null,
+      routeThreadRef: null,
+    });
+    const previousSettings = getClientSettings();
+    stack.defer(() => __setClientSettingsForTests(previousSettings));
+    __setClientSettingsForTests({ ...previousSettings, sidebarCustomSections: sections });
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    stack.defer(() => style.remove());
+    const screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+    return {
+      screen,
+      handleNewThread,
+      async [Symbol.asyncDispose]() {
+        await screen[Symbol.asyncDispose]();
+        stack.dispose();
+      },
+    };
+  }
+
+  const threadKeysOf = (id: string) =>
+    getClientSettings().sidebarCustomSections.find((section) => section.id === id)?.threadKeys;
+  const chatKey = (index: number) =>
+    scopedThreadKey(scopeThreadRef(local, ThreadId.make(`chat-${index}`)));
+
+  it("starts chats from sections sharing a chat folder there, each kept in its own section, and a linked folder wins", async () => {
+    const linked = project("linked");
+    const linkedRef = scopeProjectRef(linked.environmentId, linked.id);
+    await using fixture = await renderSections(
+      [
+        {
+          id: "fixed",
+          name: "Faste agenter",
+          collapsed: false,
+          threadKeys: [],
+          chatProjectKey: sharedKey,
+        },
+        {
+          id: "private",
+          name: "Privat",
+          collapsed: false,
+          threadKeys: [],
+          chatProjectKey: sharedKey,
+        },
+        {
+          id: "clients",
+          name: "Kunder",
+          collapsed: false,
+          threadKeys: [],
+          projectKey: scopedProjectKey(linkedRef),
+          chatProjectKey: sharedKey,
+        },
+      ],
+      { projects: [shared, linked] },
+    );
+    const { screen, handleNewThread } = fixture;
+    const sharedRef = scopeProjectRef(shared.environmentId, shared.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "New chat in Faste agenter" }));
+    await vi.waitFor(() => expect(threadKeysOf("fixed")).toEqual([chatKey(1)]));
+    await userEvent.click(screen.getByRole("button", { name: "New chat in Privat" }));
+    await vi.waitFor(() => expect(threadKeysOf("private")).toEqual([chatKey(2)]));
+    expect(threadKeysOf("fixed")).toEqual([chatKey(1)]);
+    await userEvent.click(screen.getByRole("button", { name: "New chat in Kunder" }));
+    await vi.waitFor(() => expect(threadKeysOf("clients")).toEqual([chatKey(3)]));
+    expect(handleNewThread.mock.calls).toEqual([[sharedRef], [sharedRef], [linkedRef]]);
+
+    await userEvent.hover(screen.getByRole("button", { name: "New chat in Privat" }));
+    await expect.element(screen.getByText("New chat in Privat · claude")).toBeVisible();
+  });
+
+  it("sets the same chat folder on two sections from their menus and clears it again", async () => {
+    await using fixture = await renderSections([
+      { id: "fixed", name: "Faste agenter", collapsed: false, threadKeys: [] },
+      { id: "private", name: "Privat", collapsed: false, threadKeys: [] },
+      {
+        id: "clients",
+        name: "Kunder",
+        collapsed: false,
+        threadKeys: [],
+        projectKey: "local:other",
+      },
+    ]);
+    const { screen } = fixture;
+    for (const name of ["Faste agenter", "Privat"]) {
+      await userEvent.click(screen.getByRole("button", { name: `Section options for ${name}` }));
+      await expect
+        .element(screen.getByRole("menuitem", { name: "Stop starting chats in a folder" }))
+        .not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("menuitem", { name: "Start chats in folder…" }));
+      await expect
+        .element(screen.getByRole("heading", { name: "Start new chats in a folder" }))
+        .toBeVisible();
+      await screen.getByRole("textbox", { name: "Project folder path" }).fill(shared.workspaceRoot);
+      await userEvent.click(screen.getByRole("button", { name: "Use folder", exact: true }));
+      await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
+    }
+    expect(
+      getClientSettings().sidebarCustomSections.map((section) => section.chatProjectKey),
+    ).toEqual([sharedKey, sharedKey, undefined]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Section options for Kunder" }));
+    await expect.element(screen.getByRole("menuitem", { name: "Unlink folder" })).toBeVisible();
+    await expect
+      .element(screen.getByRole("menuitem", { name: "Start chats in folder…" }))
+      .not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(screen.getByRole("button", { name: "Section options for Privat" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Stop starting chats in a folder" }),
+    );
+    expect(
+      getClientSettings().sidebarCustomSections.map((section) => section.chatProjectKey),
+    ).toEqual([sharedKey, undefined, undefined]);
+  });
+
+  it("marks a section whose linked folder was deleted and opens its folder dialog from the plus", async () => {
+    using add = vi.spyOn(toastManager, "add");
+    await using fixture = await renderSections(
+      [
+        {
+          id: "clients",
+          name: "Kunder",
+          collapsed: false,
+          threadKeys: [],
+          projectKey: "local:gone",
+        },
+      ],
+      { projects: [shared] },
+    );
+    const { screen, handleNewThread } = fixture;
+    await expect
+      .element(
+        screen.getByRole("img", { name: "This section's folder no longer exists as a project." }),
+      )
+      .toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "New chat in Kunder" }));
+    await expect
+      .element(screen.getByRole("heading", { name: "Link a project folder" }))
+      .toBeVisible();
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "This section's folder no longer exists as a project.",
+      }),
+    );
+    expect(handleNewThread).not.toHaveBeenCalled();
+
+    await screen.getByRole("textbox", { name: "Project folder path" }).fill(shared.workspaceRoot);
+    await userEvent.click(screen.getByRole("button", { name: "Link folder", exact: true }));
+    await vi.waitFor(() =>
+      expect(getClientSettings().sidebarCustomSections[0]?.projectKey).toBe(sharedKey),
+    );
+    await expect
+      .element(
+        screen.getByRole("img", { name: "This section's folder no longer exists as a project." }),
+      )
+      .not.toBeInTheDocument();
+  });
+
+  it("names an archived chat folder in the toast and opens the chat folder dialog", async () => {
+    const archived = { ...shared, archivedAt: "2026-11-23T20:00:00.000Z" };
+    using add = vi.spyOn(toastManager, "add");
+    await using fixture = await renderSections(
+      [
+        {
+          id: "private",
+          name: "Privat",
+          collapsed: false,
+          threadKeys: [],
+          chatProjectKey: sharedKey,
+        },
+      ],
+      { projects: [archived] },
+    );
+    const { screen, handleNewThread } = fixture;
+    await expect
+      .element(
+        screen.getByRole("img", { name: "This section's folder no longer exists as a project." }),
+      )
+      .toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "New chat in Privat" }));
+    await expect
+      .element(screen.getByRole("heading", { name: "Start new chats in a folder" }))
+      .toBeVisible();
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: `The folder “${shared.workspaceRoot}” no longer exists as a project.`,
+      }),
+    );
+    expect(handleNewThread).not.toHaveBeenCalled();
+  });
 });
 
 describe("sidebar settled pagination", () => {
