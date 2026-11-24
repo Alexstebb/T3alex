@@ -90,7 +90,8 @@ group tasks and pin the ones you open often; pinned tasks stay in the sidebar
 even when **Scheduled** is collapsed. Selecting a task opens the chat of its
 latest run, where you can keep talking to the agent. **Runs** beside the chat
 lists the task's other runs and its actions; pick a run to open its chat, or
-select the task again to return to its latest run.
+select the task again to return to its latest run. In a narrow window, open the
+list with the **Runs** button at the top of the chat.
 
 On mobile, open **Settings → Scheduled tasks** to create or manage
 ones across your connected environments. Use the settings filter to narrow the

@@ -17,6 +17,7 @@ import { cn } from "../../lib/utils";
 import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
 import { threadEnvironment, useEnvironmentThread } from "../../state/threads";
 import { Button } from "../ui/button";
+import { Sheet, SheetHeader, SheetPopup, SheetTitle } from "../ui/sheet";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ScheduledRunList } from "./ScheduledRunList";
 import {
@@ -101,13 +102,15 @@ function usePendingRunReveal(threadRef: ScopedThreadRef, runs: readonly Schedule
 
 /**
  * Beside the chat of a scheduled task's run: the task, its actions and its runs. Rendered by the
- * `_chat` layout next to the thread view, so the chat itself stays the normal thread route.
+ * `_chat` layout next to the thread view, so the chat itself stays the normal thread route. Below
+ * the `lg` breakpoint the panel has no room, so a "Runs" button opens the same list in a sheet.
  */
 export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
   const gt = useGT();
   const navigate = useNavigate();
   const { row, runs, lookup, environmentLabel } = useScheduledThreadTask(threadRef);
   const [open, setOpen] = useLocalStorage(SCHEDULED_RUNS_PANEL_OPEN_KEY, true, Schema.Boolean);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const threadKey = scopedThreadKey(threadRef);
   const pickedRunId = useScheduledRunSelection((state) => state.pickedRunByThread[threadKey]);
@@ -130,70 +133,8 @@ export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: Scoped
 
   if (row === undefined) return null;
 
-  if (!open) {
-    return (
-      <div className="hidden h-dvh w-10 shrink-0 flex-col items-center border-l bg-background lg:flex">
-        <div
-          className={cn(
-            "h-[var(--workspace-topbar-height)] w-full shrink-0",
-            isElectron && "drag-region",
-          )}
-        />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-sm"
-                variant="ghost-muted"
-                aria-label={gt("Show runs")}
-                onClick={() => setOpen(true)}
-              />
-            }
-          >
-            <CalendarClockIcon aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup side="left">{gt("Show runs")}</TooltipPopup>
-        </Tooltip>
-      </div>
-    );
-  }
-
-  return (
-    <aside
-      aria-label={gt("Runs")}
-      className="hidden h-dvh min-h-0 w-72 shrink-0 flex-col border-l bg-background lg:flex xl:w-80"
-    >
-      <div
-        className={cn(
-          "flex h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1.5 pr-3 pl-2 wco:pr-(--workspace-native-controls-inset)",
-          isElectron && "drag-region",
-        )}
-      >
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost-muted"
-                className="[-webkit-app-region:no-drag]"
-                aria-label={gt("Hide runs")}
-                onClick={() => setOpen(false)}
-              />
-            }
-          >
-            <PanelRightCloseIcon aria-hidden />
-          </TooltipTrigger>
-          <TooltipPopup side="bottom">{gt("Hide runs")}</TooltipPopup>
-        </Tooltip>
-        <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <CalendarClockIcon aria-hidden className="size-3.5 shrink-0" />
-          <span className="truncate">
-            <T>Scheduled</T>
-          </span>
-        </span>
-        {/* The chat's panel controls float over this corner while its own right panel is open. */}
-        {chatPanelOpen ? <span aria-hidden className="ml-auto w-28 shrink-0" /> : null}
-      </div>
+  const body = (onPicked?: () => void) => (
+    <>
       <ScheduledTaskHeader
         key={taskKey}
         environmentId={row.environmentId}
@@ -213,8 +154,102 @@ export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: Scoped
         loading={lookup.data === null}
         error={lookup.error}
         onRetry={lookup.refresh}
-        onSelect={(run) => void openScheduledRun(navigate, row.environmentId, run, runs)}
+        onSelect={(run) => {
+          onPicked?.();
+          void openScheduledRun(navigate, row.environmentId, run, runs);
+        }}
       />
+    </>
+  );
+
+  return (
+    <>
+      <Button
+        size="xs"
+        variant="outline"
+        className="fixed top-[calc(var(--workspace-topbar-height)+--spacing(2))] right-3 z-20 lg:hidden"
+        onClick={() => setSheetOpen(true)}
+      >
+        <CalendarClockIcon aria-hidden />
+        <T>Runs</T>
+      </Button>
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetPopup side="right" className="w-[min(88vw,22rem)] lg:hidden">
+          <SheetHeader className="sr-only">
+            <SheetTitle>
+              <T>Runs</T>
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex h-12 shrink-0 items-center gap-1.5 pr-12 pl-4 text-xs font-medium text-muted-foreground">
+            <CalendarClockIcon aria-hidden className="size-3.5 shrink-0" />
+            <T>Scheduled</T>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col">{body(() => setSheetOpen(false))}</div>
+        </SheetPopup>
+      </Sheet>
+      {open ? (
+        <aside
+          aria-label={gt("Runs")}
+          className="hidden h-dvh min-h-0 w-72 shrink-0 flex-col border-l bg-background lg:flex xl:w-80"
+        >
+          <div
+            className={cn(
+              "flex h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1.5 pr-3 pl-2 wco:pr-(--workspace-native-controls-inset)",
+              isElectron && "drag-region",
+            )}
+          >
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    className="[-webkit-app-region:no-drag]"
+                    aria-label={gt("Hide runs")}
+                    onClick={() => setOpen(false)}
+                  />
+                }
+              >
+                <PanelRightCloseIcon aria-hidden />
+              </TooltipTrigger>
+              <TooltipPopup side="bottom">{gt("Hide runs")}</TooltipPopup>
+            </Tooltip>
+            <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <CalendarClockIcon aria-hidden className="size-3.5 shrink-0" />
+              <span className="truncate">
+                <T>Scheduled</T>
+              </span>
+            </span>
+            {/* The chat's panel controls float over this corner while its own right panel is open. */}
+            {chatPanelOpen ? <span aria-hidden className="ml-auto w-28 shrink-0" /> : null}
+          </div>
+          {body()}
+        </aside>
+      ) : (
+        <div className="hidden h-dvh w-10 shrink-0 flex-col items-center border-l bg-background lg:flex">
+          <div
+            className={cn(
+              "h-[var(--workspace-topbar-height)] w-full shrink-0",
+              isElectron && "drag-region",
+            )}
+          />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="ghost-muted"
+                  aria-label={gt("Show runs")}
+                  onClick={() => setOpen(true)}
+                />
+              }
+            >
+              <CalendarClockIcon aria-hidden />
+            </TooltipTrigger>
+            <TooltipPopup side="left">{gt("Show runs")}</TooltipPopup>
+          </Tooltip>
+        </div>
+      )}
       {editing ? (
         <Suspense fallback={null}>
           <ScheduledTaskEditor
@@ -225,6 +260,6 @@ export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: Scoped
           />
         </Suspense>
       ) : null}
-    </aside>
+    </>
   );
 }

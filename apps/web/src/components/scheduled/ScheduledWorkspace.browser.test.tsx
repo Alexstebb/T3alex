@@ -419,6 +419,34 @@ describe("Scheduled task chats", () => {
     await expect.element(screen.getByText("Chat for thread-b")).toBeVisible();
   });
 
+  it("opens the runs in a sheet from a Runs button in a narrow window", async () => {
+    await using _viewport = await viewport(800);
+    using _storage = isolateLocalStorage(
+      SCHEDULED_SIDEBAR_COLLAPSED_KEY,
+      SCHEDULED_RUNS_PANEL_OPEN_KEY,
+    );
+    using _organization = withOrganization();
+    using fixture = createFixture({ initialEntry: "/local/thread-b" });
+    const { router } = fixture;
+    await using screen = await renderWorkspace(fixture);
+    await expect.element(screen.getByText("Chat for thread-b")).toBeVisible();
+    await expect
+      .element(screen.getByRole("complementary", { name: "Runs" }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Runs", exact: true }));
+    const sheet = screen.getByRole("dialog");
+    await expect.element(sheet.getByRole("heading", { name: "Daily briefing" })).toBeVisible();
+    const sheetRuns = sheet.getByRole("button", { name: /Completed/ });
+    expect(sheetRuns.elements()).toHaveLength(2);
+    await expect.element(sheetRuns.first()).toHaveAttribute("aria-current", "true");
+
+    await userEvent.click(sheetRuns.last());
+    await expect.element(screen.getByText("Chat for thread-a")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/local/thread-a");
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("opens the task page for a task that has not run yet", async () => {
     await using _viewport = await viewport(1280);
     using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
