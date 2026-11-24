@@ -65,6 +65,7 @@ import * as DueHint from "../scheduling/DueHint.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import { latestRootProviderFailure } from "@t3tools/shared/orchestrationV2ThreadError";
 import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
+import { makeScheduledTaskRuns } from "./ScheduledTaskRuns.ts";
 import {
   redactHeaders,
   redactQuery,
@@ -1446,96 +1447,8 @@ export const layer = Layer.effect(
         }),
       );
 
-    // Local fork: the run lookup index is created here instead of in a numbered migration,
-    // because a fork-only migration id would collide with the next upstream migration.
-    // The index only speeds up the lookup, so a failure to create it is ignored.
-    const ensureRunLookupIndex = yield* Effect.cached(
-      sql`
-        CREATE INDEX IF NOT EXISTS orchestration_v2_projection_messages_scheduled_task_idx
-        ON orchestration_v2_projection_messages(
-          CASE WHEN json_valid(payload_json)
-            THEN json_extract(payload_json, '$.scheduledTaskId') END,
-          message_id
-        )
-        WHERE CASE WHEN json_valid(payload_json)
-          THEN json_type(payload_json, '$.scheduledTaskId') END IS NOT NULL
-      `.pipe(Effect.asVoid, Effect.ignore),
-    );
-
-    const listTaskRuns = (taskId: ScheduledTaskId) =>
-      sql<ScheduledTaskRunsResult["runs"][number]>`
-        SELECT
-          run.run_id AS "runId",
-          run.thread_id AS "threadId",
-          input.message_id AS "userMessageId",
-          (
-            SELECT reply.message_id
-            FROM orchestration_v2_projection_messages AS reply
-            WHERE reply.run_id = run.run_id AND reply.role = 'assistant'
-            ORDER BY reply.created_at DESC, reply.message_id DESC
-            LIMIT 1
-          ) AS "assistantMessageId",
-          run.status,
-          run.requested_at AS "requestedAt"
-        FROM orchestration_v2_projection_messages AS input
-        INNER JOIN orchestration_v2_projection_runs AS run
-          ON CASE WHEN json_valid(run.payload_json)
-            THEN json_extract(run.payload_json, '$.userMessageId') END = input.message_id
-        INNER JOIN orchestration_v2_projection_threads AS thread
-          ON thread.thread_id = run.thread_id AND thread.deleted_at IS NULL
-        WHERE CASE WHEN json_valid(input.payload_json)
-          THEN json_extract(input.payload_json, '$.scheduledTaskId') END = ${taskId}
-          AND CASE WHEN json_valid(input.payload_json)
-            THEN json_type(input.payload_json, '$.scheduledTaskId') END IS NOT NULL
-        ORDER BY run.requested_at DESC, run.run_id DESC
-        LIMIT 50
-      `.pipe(NodeSqliteClient.readOnly);
-
-    // Local fork: lets a client find the task behind the chat it has open.
-    const latestTaskInThread = (threadId: ThreadId) =>
-      sql<{ readonly taskId: ScheduledTaskId }>`
-        SELECT json_extract(payload_json, '$.scheduledTaskId') AS "taskId"
-        FROM orchestration_v2_projection_messages
-        WHERE thread_id = ${threadId}
-          AND CASE WHEN json_valid(payload_json)
-            THEN json_type(payload_json, '$.scheduledTaskId') END IS NOT NULL
-        ORDER BY created_at DESC, message_id DESC
-        LIMIT 1
-      `.pipe(
-        NodeSqliteClient.readOnly,
-        Effect.map((rows) => rows[0]?.taskId ?? null),
-      );
-
-    const listRuns: ScheduledTaskService["Service"]["listRuns"] = Effect.fn(
-      "ScheduledTaskService.listRuns",
-    )(
-      function* (input) {
-        yield* ensureRunLookupIndex;
-        const taskId = "id" in input ? input.id : yield* latestTaskInThread(input.threadId);
-        const runs = taskId === null ? [] : yield* listTaskRuns(taskId);
-        return { taskId, runs } satisfies ScheduledTaskRunsResult;
-      },
-      (effect, input) =>
-        effect.pipe(
-          Effect.mapError((cause) =>
-            taskError("Could not list schedule task runs.", {
-              ...("id" in input ? { taskId: input.id } : {}),
-              cause,
-            }),
-          ),
-        ),
-    );
-
-    const subscribeRuns: ScheduledTaskService["Service"]["subscribeRuns"] = (input) =>
-      Stream.unwrap(
-        Effect.gen(function* () {
-          const subscription = yield* PubSub.subscribe(changesPubSub);
-          return Stream.concat(
-            Stream.fromEffect(listRuns(input)),
-            Stream.fromSubscription(subscription).pipe(Stream.mapEffect(() => listRuns(input))),
-          );
-        }),
-      );
+    // Local fork: a task's run history (ScheduledTaskRuns.ts).
+    const { listRuns, subscribeRuns } = yield* makeScheduledTaskRuns(changesPubSub);
 
     const requireDestinationThread = Effect.fn("ScheduledTaskService.requireDestinationThread")(
       function* (threadId: ThreadId, projectId: ProjectId, taskId: ScheduledTaskId) {
