@@ -33,7 +33,6 @@ import {
   JUMP_HINT_SLOT_CLASS_NAME,
   JumpHintBadge,
 } from "./SidebarThreadRow";
-import { sidebarSectionRowId, type indexSidebarSections } from "./sidebarSections";
 
 const EMPTY_COMPOSER_PARTS = {
   prompt: "",
@@ -262,8 +261,8 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectByKey: ReadonlyMap<string, EnvironmentProject>;
   projectDisplayNameByKey: ReadonlyMap<string, string>;
   routeDraftId: string | null;
-  sectionId?: string;
-  sectionIndex?: ReturnType<typeof indexSidebarSections>;
+  // Local fork: the custom sidebar section these drafts sit in.
+  navigationParent?: string | undefined;
   onNavigateToDraft: (draftId: DraftId) => void;
   onDraftContextMenu: (
     draftId: DraftId,
@@ -281,16 +280,11 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   );
   const drafts = props.draftIds.flatMap((draftId) => {
     const session = draftThreadsByThreadKey[draftId];
-    if (!session) return [];
-    const sectionId =
-      props.sectionIndex?.forThread(session.environmentId, session.threadId, session.projectId) ??
-      null;
-    if (sectionId !== (props.sectionId ?? null)) return [];
     const composer =
       (draftId === props.routeDraftId ? props.routeDraftComposer : null) ??
       draftsByThreadKey[draftId] ??
       null;
-    return [{ draftId, session, composer }];
+    return session ? [{ draftId, session, composer }] : [];
   });
   if (drafts.length === 0) {
     return null;
@@ -309,9 +303,7 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
             projectDisplayName={props.projectDisplayNameByKey.get(projectKey) ?? null}
             isActive={draftId === props.routeDraftId}
             jumpLabel={props.jumpLabelByDraftId?.get(draftId) ?? null}
-            navigationParent={
-              props.sectionId === undefined ? undefined : sidebarSectionRowId(props.sectionId)
-            }
+            navigationParent={props.navigationParent}
             onNavigate={props.onNavigateToDraft}
             onDiscard={discardComposerDraft}
             onContextMenu={props.onDraftContextMenu}

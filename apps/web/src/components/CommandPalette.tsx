@@ -508,8 +508,8 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
-  const [sidebarSections, setSidebarSections] = useSidebarSections();
-  const startChatInSection = useStartSidebarSectionChat(handleNewThread, setSidebarSections);
+  const [sidebarSections] = useSidebarSections();
+  const startChatInSection = useStartSidebarSectionChat(handleNewThread);
   const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =

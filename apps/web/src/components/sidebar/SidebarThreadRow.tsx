@@ -133,6 +133,7 @@ import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
 import { ThreadDetailsIssueRows } from "../chat/ThreadDetailsIssueRows";
 import { IssueGlyph, issueStatePresentation } from "../issue/issuePresentation";
+import { sectionSortableDisabled, type SidebarSectionDragRole } from "./sidebarSections";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
 // status and auth on every provider; leaving those out keeps each
@@ -482,8 +483,6 @@ export const draftPenClassName = "size-3 shrink-0 text-warning-foreground";
 // re-renders every row and marker on each sidebar update.
 export const SIDEBAR_SORTABLE_DRAG_DISABLED = { draggable: true } as const;
 const SIDEBAR_SORTABLE_DRAG_ENABLED = { draggable: false } as const;
-const SECTION_SORTABLE_DRAG_ENABLED = { draggable: false, droppable: true } as const;
-const SECTION_SORTABLE_DISABLED = { draggable: true, droppable: true } as const;
 
 // Takes the row's props rather than a render function: a closure from the
 // sidebar body is new on every sidebar render, which rebuilt the bag and
@@ -493,24 +492,20 @@ export function SortableThreadRow(
     sortableId: string;
     sortableDisabled: boolean;
     contextDrag: boolean;
-    sectionRow?: boolean;
-    canDragToSection?: boolean;
+    // Local fork: set while custom sidebar sections exist.
+    sectionDrag?: SidebarSectionDragRole | undefined;
   },
 ) {
-  const { sortableId, sortableDisabled, contextDrag, sectionRow, canDragToSection, ...rowProps } =
-    props;
+  const { sortableId, sortableDisabled, contextDrag, sectionDrag, ...rowProps } = props;
   const canOperateThread = useEnvironmentScope(
     rowProps.thread.environmentId,
     AuthOrchestrationOperateScope,
   );
-  const skipDrag = sortableDisabled || (!canOperateThread && !canDragToSection);
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: sortableId,
-    disabled: sectionRow
-      ? skipDrag
-        ? SECTION_SORTABLE_DISABLED
-        : SECTION_SORTABLE_DRAG_ENABLED
-      : skipDrag
+    disabled: sectionDrag
+      ? sectionSortableDisabled(sectionDrag, sortableDisabled)
+      : sortableDisabled || !canOperateThread
         ? SIDEBAR_SORTABLE_DRAG_DISABLED
         : SIDEBAR_SORTABLE_DRAG_ENABLED,
     animateLayoutChanges: animateSidebarLayoutChanges,
@@ -595,7 +590,6 @@ type SidebarThreadRowProps = {
   // "folder-multiline" adds the card's environment and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
   navigationParent?: string | undefined;
-  sectionDropId?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
   snoozeSupported: boolean;
@@ -1326,7 +1320,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     return (
       <li
         data-thread-item={threadKey}
-        data-sidebar-section-drop={props.sectionDropId}
         {...sortableRootProps}
         {...(fileDropHandlers ?? {})}
         className={cn(

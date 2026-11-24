@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { useEffect } from "react";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   parseScopedProjectKey,
   parseScopedThreadKey,
@@ -32,6 +33,7 @@ import { useScratchProject } from "../../hooks/useScratchProject";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { readProject } from "../../state/entities";
 import { environmentThreadShells, threadFamilies } from "../../state/threads";
+import { orderItemsByPreferredIds, type SidebarSection } from "../Sidebar.logic";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 const LEGACY_SECTIONS_STORAGE_KEY = "t3code:sidebar:custom-sections";
@@ -76,23 +78,29 @@ export function useSidebarSections() {
   useEffect(() => {
     if (hydrated) importLegacySections();
   }, [hydrated]);
-  const setSections = (
-    value:
-      | readonly SidebarCustomSection[]
-      | ((current: readonly SidebarCustomSection[]) => readonly SidebarCustomSection[]),
-  ) => {
-    const next =
-      typeof value === "function" ? value(getClientSettings().sidebarCustomSections) : value;
-    void persistClientSettingsPatch({ sidebarCustomSections: next });
-  };
-  return [sections, setSections] as const;
+  return [sections, setSidebarSections] as const;
+}
+
+export function setSidebarSections(
+  value:
+    | readonly SidebarCustomSection[]
+    | ((current: readonly SidebarCustomSection[]) => readonly SidebarCustomSection[]),
+) {
+  const next =
+    typeof value === "function" ? value(getClientSettings().sidebarCustomSections) : value;
+  void persistClientSettingsPatch({ sidebarCustomSections: next });
+}
+
+export function useSidebarSectionIndex() {
+  const [sections] = useSidebarSections();
+  return indexSidebarSections(sections);
 }
 
 export function sidebarSectionRowId(id: string) {
   return `custom-section:${id}`;
 }
 
-export function indexSidebarSections(sections: readonly CustomSidebarSection[]) {
+function indexSidebarSections(sections: readonly CustomSidebarSection[]) {
   const manual = new Map(
     sections.flatMap((section) => section.threadKeys.map((key) => [key, section.id] as const)),
   );
@@ -109,7 +117,12 @@ export function indexSidebarSections(sections: readonly CustomSidebarSection[]) 
     ),
   );
   return {
+    sections,
     linked,
+    // An empty folder stays hidden when every project in it belongs to a linked section.
+    linksEveryProject(projectRefs: readonly ScopedProjectRef[]) {
+      return projectRefs.every((ref) => linked.has(scopedProjectKey(ref)));
+    },
     forThread(environmentId: EnvironmentId, threadId: ThreadId, projectId: ProjectId) {
       if (manual.size === 0 && linked.size === 0) return null;
       const key = scopedThreadKey(scopeThreadRef(environmentId, threadId));
@@ -168,10 +181,9 @@ export function moveThreadsToSidebarSection(
   });
 }
 
-export function useStartSidebarSectionChat(
-  handleNewThread: NewThreadHandler,
-  setSections: ReturnType<typeof useSidebarSections>[1],
-) {
+export type SidebarSectionIndex = ReturnType<typeof indexSidebarSections>;
+
+export function useStartSidebarSectionChat(handleNewThread: NewThreadHandler) {
   const gt = useGT();
   const { openScratchProject, scratchEnvironmentId } = useScratchProject();
   return async (section: CustomSidebarSection, fallback: ScopedProjectRef | null) => {
@@ -201,7 +213,7 @@ export function useStartSidebarSectionChat(
     const draft = await handleNewThread(workspace);
     if (draft === null) return;
     const key = scopedThreadKey(scopeThreadRef(workspace.environmentId, draft.threadId));
-    setSections((current) =>
+    setSidebarSections((current) =>
       moveThreadsToSidebarSection(current, [key], section.id).map((item) =>
         item.id === section.id && item.collapsed ? { ...item, collapsed: false } : item,
       ),
@@ -251,4 +263,127 @@ export function useSidebarSectionThreads(
       for (const release of releases) release();
     };
   }, [observed]);
+}
+
+const NO_THREADS: readonly EnvironmentThreadShell[] = [];
+
+function threadShellKey(thread: Pick<EnvironmentThreadShell, "environmentId" | "id">) {
+  return scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+}
+
+function routeThreadOnly(
+  threads: readonly EnvironmentThreadShell[],
+  routeThreadKey: string | null,
+): readonly EnvironmentThreadShell[] {
+  if (routeThreadKey === null) return NO_THREADS;
+  const routeThread = threads.find((thread) => threadShellKey(thread) === routeThreadKey);
+  return routeThread === undefined ? NO_THREADS : [routeThread];
+}
+
+/**
+ * Takes the threads of custom sections out of the built-in shelves. `useSidebarThreads`
+ * spreads the result last, so it replaces the shelf lists, keys and search list there.
+ */
+export function splitCustomSidebarSections(
+  partition: Readonly<Record<`${SidebarSection}Threads`, readonly EnvironmentThreadShell[]>>,
+  sectionIndex: SidebarSectionIndex,
+  routeRowThreadKey: string | null,
+) {
+  const sectionsByStatus = [
+    [partition.pinnedThreads, "pinned"],
+    [partition.activeThreads, "active"],
+    [partition.workingThreads, "working"],
+    [partition.snoozedThreads, "snoozed"],
+    [partition.settledThreads, "settled"],
+  ] as const;
+  const searchableThreads = sectionsByStatus.flatMap(([threads]) => threads);
+  const sectionIdByThread = new Map<string, string>();
+  const sectionThreads = new Map<string, EnvironmentThreadShell[]>();
+  const sectionByThreadKey = new Map<string, SidebarSection>();
+  for (const [threads, status] of sectionsByStatus) {
+    for (const thread of threads) {
+      const key = threadShellKey(thread);
+      sectionByThreadKey.set(key, status);
+      const sectionId = sectionIndex.forThread(thread.environmentId, thread.id, thread.projectId);
+      if (sectionId !== null) {
+        sectionIdByThread.set(key, sectionId);
+        const group = sectionThreads.get(sectionId);
+        if (group) group.push(thread);
+        else sectionThreads.set(sectionId, [thread]);
+      }
+    }
+  }
+  const unassigned = (threads: readonly EnvironmentThreadShell[]) =>
+    sectionIdByThread.size === 0
+      ? threads
+      : threads.filter((thread) => !sectionIdByThread.has(threadShellKey(thread)));
+  const groups = sectionIndex.sections.map((section) => {
+    const threads = orderItemsByPreferredIds({
+      items: sectionThreads.get(section.id) ?? NO_THREADS,
+      preferredIds: section.threadKeys,
+      getId: threadShellKey,
+    });
+    return {
+      section,
+      count: threads.length,
+      threads: section.collapsed ? routeThreadOnly(threads, routeRowThreadKey) : threads,
+    };
+  });
+  return {
+    pinnedThreads: unassigned(partition.pinnedThreads),
+    activeThreads: unassigned(partition.activeThreads),
+    workingThreads: unassigned(partition.workingThreads),
+    snoozedThreads: unassigned(partition.snoozedThreads),
+    settledThreads: unassigned(partition.settledThreads),
+    searchableThreads,
+    sectionByThreadKey,
+    settledThreadKeys: new Set(partition.settledThreads.map(threadShellKey)),
+    snoozedThreadKeys: new Set(partition.snoozedThreads.map(threadShellKey)),
+    customSectionThreads: {
+      groups,
+      sectionIdByThread,
+      sectionByThreadKey,
+      renderedThreadKeys: new Set(groups.flatMap(({ threads }) => threads.map(threadShellKey))),
+      layoutKey: JSON.stringify(
+        groups.map(({ section, threads }) => [section.id, threads.map(threadShellKey)]),
+      ),
+    },
+  };
+}
+
+export type CustomSectionThreads = ReturnType<
+  typeof splitCustomSidebarSections
+>["customSectionThreads"];
+
+// With sections every row can drag (into one); rows inside a section take no shelf drop.
+const SECTION_ROW_DRAG_ENABLED = { draggable: false } as const;
+const SECTION_ROW_DRAG_DISABLED = { draggable: true } as const;
+const SECTION_MEMBER_DRAG_ENABLED = { draggable: false, droppable: true } as const;
+const SECTION_MEMBER_DRAG_DISABLED = { draggable: true, droppable: true } as const;
+
+export type SidebarSectionDragRole = "row" | "member";
+
+export function sectionSortableDisabled(role: SidebarSectionDragRole, sortableDisabled: boolean) {
+  if (role === "member") {
+    return sortableDisabled ? SECTION_MEMBER_DRAG_DISABLED : SECTION_MEMBER_DRAG_ENABLED;
+  }
+  return sortableDisabled ? SECTION_ROW_DRAG_DISABLED : SECTION_ROW_DRAG_ENABLED;
+}
+
+// The section whose header, or one of whose rows, is under the pointer.
+export function customSectionAtPoint(
+  list: HTMLElement | null,
+  point: { readonly x: number; readonly y: number },
+  sectionIdByThread: ReadonlyMap<string, string>,
+) {
+  if (list === null) return null;
+  for (const element of list.ownerDocument.elementsFromPoint(point.x, point.y)) {
+    const header = element.closest<HTMLElement>("[data-sidebar-section-drop]");
+    if (header && list.contains(header)) return header.dataset.sidebarSectionDrop ?? null;
+    const row = element.closest<HTMLElement>("[data-thread-item]");
+    const sectionId =
+      row && list.contains(row) ? sectionIdByThread.get(row.dataset.threadItem ?? "") : undefined;
+    if (sectionId !== undefined) return sectionId;
+  }
+  return null;
 }
