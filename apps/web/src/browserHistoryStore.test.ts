@@ -38,7 +38,8 @@ vi.mock("./hooks/useSettings", async () => {
   const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
   return {
     getClientSettings: () => DEFAULT_CLIENT_SETTINGS,
-    useClientSettings: () => DEFAULT_CLIENT_SETTINGS,
+    useClientSettings: <T>(selector?: (settings: typeof DEFAULT_CLIENT_SETTINGS) => T) =>
+      selector ? selector(DEFAULT_CLIENT_SETTINGS) : DEFAULT_CLIENT_SETTINGS,
     isClientSettingsHydrated: () => settingsHydration.hydrated,
     ensureClientSettingsHydrated: () => settingsHydration.promise,
   };
