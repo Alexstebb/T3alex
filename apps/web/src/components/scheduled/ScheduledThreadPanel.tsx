@@ -7,14 +7,20 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { T, useGT } from "gt-react";
 import { CalendarClockIcon, PanelRightCloseIcon } from "lucide-react";
-import { Suspense, useContext, useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  Suspense,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
 import { isElectron } from "../../env";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { getClientSettings, persistClientSettingsPatch } from "../../hooks/useSettings";
 import { assistantCitationNavigation } from "../../lib/assistantCitationNavigation";
 import { cn } from "../../lib/utils";
-import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
 import { threadEnvironment, useEnvironmentThread } from "../../state/threads";
 import { Button } from "../ui/button";
 import { Sheet, SheetHeader, SheetPopup, SheetTitle } from "../ui/sheet";
@@ -100,23 +106,79 @@ function usePendingRunReveal(threadRef: ScopedThreadRef, runs: readonly Schedule
   useEffect(() => () => clearPendingRunReveal(threadKey), [threadKey]);
 }
 
+// Copies the window's insets before the inner wrapper redefines them; a property cannot read its
+// own inherited value.
+const WINDOW_INSETS_STYLE = {
+  "--scheduled-window-controls-right": "var(--workspace-controls-right)",
+  "--scheduled-window-native-inset": "var(--workspace-native-controls-inset)",
+} as CSSProperties;
+// The chat's panel toggles are fixed to the window's top-right corner and its headers pad for the
+// native window controls (`.wco`). Beside the panel both move off it, as if the window ended at
+// the panel's left edge. The native controls still cover part of the chat beside the rail.
+const CHAT_INSETS_STYLE = {
+  "--workspace-controls-right":
+    "max(var(--scheduled-window-controls-right), calc(var(--scheduled-runs-width) + env(safe-area-inset-right) + 0.75rem))",
+  "--workspace-native-controls-inset":
+    "max(calc(var(--scheduled-window-native-inset) - var(--scheduled-runs-width)), 0.75rem)",
+} as CSSProperties;
+// The rail below `lg` or while the panel is hidden, else the panel.
+const RUNS_WIDTH_RAIL = "[--scheduled-runs-width:2.5rem]";
+const RUNS_WIDTH_OPEN =
+  "[--scheduled-runs-width:2.5rem] lg:[--scheduled-runs-width:18rem] xl:[--scheduled-runs-width:20rem]";
+
 /**
- * Beside the chat of a scheduled task's run: the task, its actions and its runs. Rendered by the
- * `_chat` layout next to the thread view, so the chat itself stays the normal thread route. Below
- * the `lg` breakpoint the panel has no room, so a "Runs" button opens the same list in a sheet.
+ * The `_chat` layout's thread view and, for a scheduled task's run, the task, its actions and its
+ * runs beside it, so the chat itself stays the normal thread route. The wrappers are always
+ * rendered so the chat keeps its place in the tree when the task is found or the thread changes.
+ * Below the `lg` breakpoint the panel is a rail whose Runs button opens the list in a sheet.
  */
-export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
+export function ScheduledThreadFrame({
+  threadRef,
+  children,
+}: {
+  readonly threadRef: ScopedThreadRef | null;
+  readonly children: ReactNode;
+}) {
+  const task = useScheduledThreadTask(threadRef);
+  const [open, setOpen] = useLocalStorage(SCHEDULED_RUNS_PANEL_OPEN_KEY, true, Schema.Boolean);
+  const shown = threadRef !== null && task.row !== undefined;
+  return (
+    <div
+      className={cn("contents", shown && (open ? RUNS_WIDTH_OPEN : RUNS_WIDTH_RAIL))}
+      style={WINDOW_INSETS_STYLE}
+    >
+      <div className="contents" style={shown ? CHAT_INSETS_STYLE : undefined}>
+        {children}
+      </div>
+      {shown ? (
+        <ScheduledThreadPanel
+          threadRef={threadRef}
+          task={task}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ScheduledThreadPanel({
+  threadRef,
+  task: { row, runs, lookup, environmentLabel },
+  open,
+  onOpenChange: setOpen,
+}: {
+  readonly threadRef: ScopedThreadRef;
+  readonly task: ReturnType<typeof useScheduledThreadTask>;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
   const gt = useGT();
   const navigate = useNavigate();
-  const { row, runs, lookup, environmentLabel } = useScheduledThreadTask(threadRef);
-  const [open, setOpen] = useLocalStorage(SCHEDULED_RUNS_PANEL_OPEN_KEY, true, Schema.Boolean);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const threadKey = scopedThreadKey(threadRef);
   const pickedRunId = useScheduledRunSelection((state) => state.pickedRunByThread[threadKey]);
-  const chatPanelOpen = useRightPanelStore(
-    (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).isOpen,
-  );
   usePendingRunReveal(threadRef, runs);
 
   const taskKey = row ? scheduledTaskOrganizationKey(row.environmentId, row.task.id) : null;
@@ -164,17 +226,12 @@ export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: Scoped
 
   return (
     <>
-      <Button
-        size="xs"
-        variant="outline"
-        className="fixed top-[calc(var(--workspace-topbar-height)+--spacing(2))] right-3 z-20 lg:hidden"
-        onClick={() => setSheetOpen(true)}
-      >
-        <CalendarClockIcon aria-hidden />
-        <T>Runs</T>
-      </Button>
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetPopup side="right" className="w-[min(88vw,22rem)] lg:hidden">
+        {/* Below the title bar, which keeps the chat's panel toggles and the native window controls. */}
+        <SheetPopup
+          side="right"
+          className="mt-(--workspace-topbar-height) h-[calc(100%-var(--workspace-topbar-height))] max-h-[calc(100%-var(--workspace-topbar-height))] w-[min(88vw,22rem)] lg:hidden"
+        >
           <SheetHeader className="sr-only">
             <SheetTitle>
               <T>Runs</T>
@@ -190,7 +247,7 @@ export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: Scoped
       {open ? (
         <aside
           aria-label={gt("Runs")}
-          className="hidden h-dvh min-h-0 w-72 shrink-0 flex-col border-l bg-background lg:flex xl:w-80"
+          className="hidden h-dvh min-h-0 w-(--scheduled-runs-width) shrink-0 flex-col border-l bg-background lg:flex"
         >
           <div
             className={cn(
@@ -220,36 +277,56 @@ export function ScheduledThreadPanel({ threadRef }: { readonly threadRef: Scoped
                 <T>Scheduled</T>
               </span>
             </span>
-            {/* The chat's panel controls float over this corner while its own right panel is open. */}
-            {chatPanelOpen ? <span aria-hidden className="ml-auto w-28 shrink-0" /> : null}
           </div>
           {body()}
         </aside>
-      ) : (
-        <div className="hidden h-dvh w-10 shrink-0 flex-col items-center border-l bg-background lg:flex">
-          <div
-            className={cn(
-              "h-[var(--workspace-topbar-height)] w-full shrink-0",
-              isElectron && "drag-region",
-            )}
-          />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="icon-sm"
-                  variant="ghost-muted"
-                  aria-label={gt("Show runs")}
-                  onClick={() => setOpen(true)}
-                />
-              }
-            >
-              <CalendarClockIcon aria-hidden />
-            </TooltipTrigger>
-            <TooltipPopup side="left">{gt("Show runs")}</TooltipPopup>
-          </Tooltip>
-        </div>
-      )}
+      ) : null}
+      <div
+        className={cn(
+          "flex h-dvh w-(--scheduled-runs-width) shrink-0 flex-col items-center border-l bg-background",
+          open && "lg:hidden",
+        )}
+        data-scheduled-runs-rail
+      >
+        <div
+          className={cn(
+            "h-[var(--workspace-topbar-height)] w-full shrink-0",
+            isElectron && "drag-region",
+          )}
+        />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-sm"
+                variant="ghost-muted"
+                className="lg:hidden"
+                aria-label={gt("Runs")}
+                onClick={() => setSheetOpen(true)}
+              />
+            }
+          >
+            <CalendarClockIcon aria-hidden />
+          </TooltipTrigger>
+          <TooltipPopup side="left">{gt("Runs")}</TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon-sm"
+                variant="ghost-muted"
+                className="max-lg:hidden"
+                aria-label={gt("Show runs")}
+                onClick={() => setOpen(true)}
+              />
+            }
+          >
+            <CalendarClockIcon aria-hidden />
+          </TooltipTrigger>
+          <TooltipPopup side="left">{gt("Show runs")}</TooltipPopup>
+        </Tooltip>
+      </div>
       {editing ? (
         <Suspense fallback={null}>
           <ScheduledTaskEditor

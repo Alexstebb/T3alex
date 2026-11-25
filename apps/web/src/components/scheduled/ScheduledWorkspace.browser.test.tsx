@@ -33,7 +33,7 @@ import { __setClientSettingsForTests, getClientSettings } from "../../hooks/useS
 import { assistantCitationFromLocation } from "../../lib/assistantCitationNavigation";
 import { ScheduledWorkspace } from "./ScheduledWorkspace";
 import { ScheduledSidebarGroup, SCHEDULED_SIDEBAR_COLLAPSED_KEY } from "./ScheduledSidebarGroup";
-import { SCHEDULED_RUNS_PANEL_OPEN_KEY, ScheduledThreadPanel } from "./ScheduledThreadPanel";
+import { SCHEDULED_RUNS_PANEL_OPEN_KEY, ScheduledThreadFrame } from "./ScheduledThreadPanel";
 import { scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
 import { validateScheduledWorkspaceSearch } from "./scheduledWorkspaceSearch";
 import { SidebarProvider } from "../ui/sidebar";
@@ -186,15 +186,14 @@ function createWorkspaceRouter(initialEntry: string) {
     component: function ThreadView() {
       const params = thread.useParams();
       return (
-        <>
+        <ScheduledThreadFrame
+          threadRef={scopeThreadRef(
+            EnvironmentId.make(params.environmentId),
+            ThreadId.make(params.threadId),
+          )}
+        >
           <p>Chat for {params.threadId}</p>
-          <ScheduledThreadPanel
-            threadRef={scopeThreadRef(
-              EnvironmentId.make(params.environmentId),
-              ThreadId.make(params.threadId),
-            )}
-          />
-        </>
+        </ScheduledThreadFrame>
       );
     },
   });
