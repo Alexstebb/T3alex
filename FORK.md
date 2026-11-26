@@ -104,7 +104,7 @@ Clone to a **short path** with long paths enabled. NSIS (`makensis`) cannot read
 `node_modules\.pnpm\app-builder-lib@…\templates\nsis\…` is already about 160 characters below the repo root:
 
 ```powershell
-git clone -c core.longpaths=true https://github.com/Alexstebb/T3code-alex.git C:\src\t3code-alex
+git clone -c core.longpaths=true https://github.com/Alexstebb/T3alex.git C:\src\t3code-alex
 cd C:\src\t3code-alex
 vp i
 Copy-Item .env.example .env   # enables T3 Connect; see "T3 Connect needs .env" below
@@ -144,7 +144,7 @@ be cross-built from Windows or macOS. Prerequisites are upstream's: see
 toolchain, libsecret headers, ImageMagick), plus Git and Vite+ (`curl -fsSL https://vite.plus | bash`).
 
 ```sh
-git clone https://github.com/Alexstebb/T3code-alex.git ~/src/t3code-alex
+git clone https://github.com/Alexstebb/T3alex.git ~/src/t3code-alex
 cd ~/src/t3code-alex
 vp i
 cp .env.example .env   # enables T3 Connect; see "T3 Connect needs .env" below
