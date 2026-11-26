@@ -72,15 +72,20 @@ neutralised copy of the profile, and marks it for the next app start; it never s
 ```sh
 python3 fork/tools/t3update.py setup        # once per machine: config file, launcher, (Linux) app menu entry
 python3 fork/tools/t3update.py update       # safe to repeat and to run unattended; --check only reports
-python3 fork/tools/t3update.py status       # current, previous, running, commits not yet taken
-python3 fork/tools/t3update.py rollback     # previous build at the next start (--restore-db for migrations)
-python3 fork/tools/t3update.py prune        # delete builds that are not current, previous or running
+python3 fork/tools/t3update.py status       # current, rollback target (and why), running, commits not yet taken
+python3 fork/tools/t3update.py rollback     # last build that actually ran, at the next start (--restore-db for migrations)
+python3 fork/tools/t3update.py prune        # delete builds that are not current, the rollback target or running
 ```
 
 On Windows use `python` instead of `python3`. The per-machine settings (profile, port, brand, source checkout) live
 in `t3update.json` outside the repo; on Windows the defaults are the existing setup under
 `%LOCALAPPDATA%\T3CodeFork`. Builds get the public T3 Connect ids from `.env.example` when the source checkout has
 no `.env` of its own. Details and the safety rules: [fork/tools/README.md](fork/tools/README.md).
+
+`rollback` goes to the last build that was really started on the machine, not to whatever was current before the
+last update: after two updates between two app starts it skips the build that never ran. The launcher records each
+start; builds an older launcher started are noticed while they run (at the next `update`, `rollback` or `prune`).
+`status` names the target and why, and `prune` never deletes it.
 
 **Linux, moving from the .deb:** `git pull` in `~/src/t3code-alex`, run `setup` and then `update`, start "T3 Code
 Alex" from the app menu, and once it works remove the package with `sudo apt remove t3code-alex`. The profile

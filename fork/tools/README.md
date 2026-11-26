@@ -5,10 +5,10 @@
 it as the build to use the next time the app starts. Python 3 standard library only.
 
 ```sh
-python3 fork/tools/t3update.py status [--fetch]   # current, previous, running, what is new
+python3 fork/tools/t3update.py status [--fetch]   # current, rollback target and why, running, what is new
 python3 fork/tools/t3update.py update --check     # only report
 python3 fork/tools/t3update.py update             # build, smoke-test, activate for the next start
-python3 fork/tools/t3update.py rollback [--restore-db FILE]
+python3 fork/tools/t3update.py rollback [--restore-db FILE]   # the last build that actually ran
 python3 fork/tools/t3update.py prune [--dry-run]
 python3 fork/tools/t3update.py setup [--dry-run]  # once per machine
 python3 fork/tools/t3update.py config             # the resolved per-machine paths
@@ -64,12 +64,23 @@ its folder. Write Windows paths with forward slashes or doubled backslashes; it 
   process tree you started at once.
 - **Smoke tests never pin the port.** The pinned port (Windows: 14084, which the phone uses over
   Tailscale) belongs to the real app.
-- **Nothing destructive without checking current, previous and running.** `prune` and the build
-  step refuse a folder that the pointer names or that a running process was started from, and
-  refuse to guess when they cannot list processes.
+- **Nothing destructive without checking current, previous, the rollback target and running.** `prune`
+  and the build step refuse a folder that the pointer names, that is the rollback target or that a
+  running process was started from, and refuse to guess when they cannot list processes.
 - **Migrations are one-way.** `update` reports the migrations a build would add, backs the database
   up when there are any, and the launcher takes another backup right before the build's first
   start. Rolling back past a migration needs `rollback --restore-db`, with the app closed.
+- **Rollback goes to a build that really ran.** `current.json` keeps `runs` (each build once, newest last,
+  ten at most) and `lastRun`, next to the old fields, which keep their names and meaning; the old Windows
+  launcher reads only `current` and a pointer without the new fields works as before. `rollback` takes the
+  newest run that is not the current build (and not one rolled back from); `update` keeps `previous` on it, so
+  two updates between two app starts do not make a never-started build the target. With no run recorded,
+  `rollback` falls back to `previous` and says so. Who records a run: `t3launch.py` when it starts the app
+  (`source: launcher`; not when an app already on the profile takes the start over), and `update`,
+  `rollback` and `prune` for any build a process is running from right now (`source: observed`, time = when
+  it was seen, so `status` says "seen running"). `Start-T3CodeRelease.pyw` records nothing and is not edited,
+  so its starts are only caught while the app runs during one of those commands. `status` counts what is
+  running as run in its output but writes nothing.
 - **Rollback is remembered.** A build you rolled back from is listed under `rejected` in the pointer;
   `update` does not take it again until `origin/main` moves on (or `--allow-rejected`).
 - Never skip git hooks; do not push from these tools.

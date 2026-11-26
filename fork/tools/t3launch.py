@@ -120,6 +120,17 @@ def take_pending_backup(config):
         return target
 
 
+def record_start(config, name):
+    """Remember that this build was started, so `rollback` goes back to a build that really ran.
+    Never stops the app from starting."""
+    try:
+        with t3platform.FileLock(config.release_dir / "pointer.lock"):
+            pointer = t3core.read_pointer(config.pointer_path)
+            t3core.write_json_atomic(config.pointer_path, t3core.record_run(pointer, name, source="launcher"))
+    except Exception:
+        pass
+
+
 def apply_pending_settings(config, build):
     """A failure here must never stop the app from starting."""
     try:
@@ -176,6 +187,8 @@ def launch(config, check=False):
         with log_path.open("w", encoding="utf-8", newline="\n") as log:
             process = subprocess.Popen(command, cwd=desktop, env=env, stdin=subprocess.DEVNULL, stdout=log,
                                        stderr=subprocess.STDOUT, creationflags=t3platform.NO_WINDOW)
+            if owner is None:  # otherwise Electron hands this start to the app already running
+                record_start(config, build.name)
             code = process.wait()
         if code != 0:
             when = "under oppstart" if time.monotonic() - started < 60 else "uventet"

@@ -381,17 +381,24 @@ def cmd_config(config, args):
 
 def cmd_status(config, args):
     log(f"config: {config.path}{'' if config.exists else ' (not written yet; showing defaults)'}")
-    pointer = t3core.read_pointer(config.pointer_path)
-    for key in ("current", "previous"):
-        name = pointer.get(key)
+    running = running_builds(config)
+    # Read-only: what is running now counts as run in this view, but nothing is written.
+    pointer = t3core.observed(t3core.read_pointer(config.pointer_path), running)
+    target = t3core.rollback_target(pointer, lambda name: (config.builds_dir / name).is_dir())
+
+    def build_line(label, name, note=""):
         meta = t3core.read_meta(config, name) if name else None
         detail = f"{meta.get('subject')}  (built {meta.get('builtAt')})" if meta else ""
-        log(f"{key + ':':10}{name or '-'}  {detail}")
+        log(f"{label + ':':10}{name or '-'}  {detail}{note}")
+
+    build_line("current", pointer.get("current"))
+    build_line("rollback", target and target["build"], f"  [{t3core.describe_target(target)}]")
+    if pointer.get("previous") and pointer["previous"] != (target or {}).get("build"):
+        build_line("previous", pointer["previous"], "  [the build before the current one; not the rollback target]")
     if pointer.get("rejected"):
         log(f"rolled back from (not taken again automatically): {', '.join(pointer['rejected'])}")
     if pointer.get("pendingDbBackup"):
         log(f"database backup at next start (new migrations): {pointer['pendingDbBackup'].get('new')}")
-    running = running_builds(config)
     lock = launcher_running(config)
     log(f"running:  {', '.join(sorted(running)) or 'nothing from ' + str(config.builds_dir)}"
         f"{'  (launcher lock held)' if lock else ''}")
@@ -512,24 +519,32 @@ def _update(config, args):
         t3core.backup_database(config.database, target)
     pending = ({"build": name, "databaseHead": report["databaseHead"], "new": report["new"]}
                if report["new"] else None)
-    pointer = modify_pointer(config, lambda p: t3core.activated(p, name, pending))
+    running = running_builds(config)  # looked at again: the app may have been started during the build
+    pointer = modify_pointer(config, lambda p: t3core.activated(t3core.observed(p, running), name, pending))
+    target = t3core.rollback_target(pointer)
     log("")
     log(f"Ready: {name} ({meta.get('subject')}) is used the next time T3 Code starts.")
-    log(f"previous = {pointer.get('previous')} (`rollback` goes back to it)")
+    log(f"rollback target = {target['build'] if target else 'none'} ({t3core.describe_target(target)})")
     if pending:
         log("The launcher backs up the database once more right before the first start of the new build.")
     if app_running(config):
         log("T3 Code is running and was left alone: quit and start it when it suits you.")
-    record(config, "updated", f"{pointer.get('previous')} -> {name}")
+    record(config, "updated", f"{current} -> {name}")
     return EXIT_OK
 
 
 def cmd_rollback(config, args):
     require_config(config)
-    pointer = t3core.read_pointer(config.pointer_path)
-    previous = pointer.get("previous")
-    if not previous:
-        raise UpdateError("No previous build recorded.")
+    running = running_builds(config)
+    pointer = t3core.observed(t3core.read_pointer(config.pointer_path), running)
+    target = t3core.rollback_target(pointer, lambda name: (config.builds_dir / name).is_dir())
+    if not target:
+        raise UpdateError("No build to go back to: none besides the current one is known to have run, "
+                          "and the previous build is missing.")
+    previous = target["build"]
+    log(f"Rolling back to {previous} ({t3core.describe_target(target)})")
+    if target["basis"] == "previous":
+        log("  No other build is recorded as run on this machine; using `previous` as before.")
     build_dir = config.builds_dir / previous
     try:
         t3launch.check_build(config, build_dir)
@@ -564,8 +579,8 @@ def cmd_rollback(config, args):
             log(f"Quit T3 Code, then: t3update.py rollback --restore-db \"{newest}\"")
             log("(everything written since that backup is lost)")
         raise UpdateError("rollback needs a database restore")
-    pointer = modify_pointer(config, t3core.rolled_back)
-    log(f"current = {pointer['current']}, previous = {pointer['previous']}")
+    pointer = modify_pointer(config, lambda p: t3core.rolled_back(t3core.observed(p, running), target=previous))
+    log(f"current = {pointer['current']} (rolled back from {pointer['previous']})")
     log(f"{pointer['previous']} will not be taken again by `update` until {config.upstream_ref} moves on.")
     if app_running(config):
         log("T3 Code is running: quit and start it to switch.")
@@ -578,10 +593,12 @@ def cmd_prune(config, args):
     if not config.builds_dir.is_dir():
         log("No builds folder.")
         return EXIT_NOTHING
-    pointer = t3core.read_pointer(config.pointer_path)
     running = running_builds(config)
+    if not args.dry_run:
+        modify_pointer(config, lambda p: t3core.observed(p, running))
+    pointer = t3core.read_pointer(config.pointer_path)
     keep = t3core.protected_builds(pointer, running)
-    log(f"keeping: {', '.join(sorted(keep)) or '-'} (current, previous, running)")
+    log(f"keeping: {', '.join(sorted(keep)) or '-'} (current, previous, rollback target, running)")
     entries = os.listdir(config.builds_dir)
     candidates = t3core.prune_candidates(entries, pointer, running)
     if not candidates:
@@ -711,10 +728,10 @@ def main(argv=None):
     p.add_argument("--ref", help="build this ref instead of <remote>/<branch>")
     p.add_argument("--allow-rejected", action="store_true", help="take a build you rolled back from")
     p.set_defaults(func=cmd_update)
-    p = sub.add_parser("rollback", help="use the previous build at the next start")
+    p = sub.add_parser("rollback", help="use the last build that was actually run (not the current one) at the next start")
     p.add_argument("--restore-db", help="restore this database backup first (app must be closed)")
     p.set_defaults(func=cmd_rollback)
-    p = sub.add_parser("prune", help="delete builds that are not current, previous or running")
+    p = sub.add_parser("prune", help="delete builds that are not current, previous, the rollback target or running")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_prune)
     p = sub.add_parser("setup", help="one-time per machine: config file, launcher, app menu entry")

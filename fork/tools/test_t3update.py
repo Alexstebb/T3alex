@@ -135,6 +135,118 @@ class Pointer(TempDir):
         self.assertFalse(path.with_name("current.json.tmp").exists())
 
 
+class RollbackTarget(TempDir):
+    A, B, C, D = "aaaaaaaaa", "bbbbbbbbb", "ccccccccc", "ddddddddd"
+
+    def config(self):
+        raw = {**t3core.default_config("linux", {}, self.tmp), "sourceRepo": str(self.tmp / "src")}
+        (self.tmp / "t3update.json").write_text(json.dumps(raw), encoding="utf-8")
+        return t3core.resolve_config(raw, self.tmp / "t3update.json", "linux")
+
+    def fake_build(self, config, name):
+        build = config.builds_dir / name
+        for path in t3core.required_build_files(config, build):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"T3CODE_DESKTOP_USER_DATA_DIR T3CODE_DESKTOP_SKIP_PROTOCOL_REGISTRATION")
+        migrations = build / t3core.MIGRATIONS_FILE
+        migrations.parent.mkdir(parents=True, exist_ok=True)
+        migrations.write_text('  [1, "Init", Migration0001],' + chr(10), encoding="utf-8")
+
+    def test_two_updates_between_starts_roll_back_to_the_build_that_ran(self):
+        pointer = t3core.record_run({"current": self.A, "previous": None}, self.A, at="2026-11-27T08:02:00")
+        pointer = t3core.activated(pointer, self.B)  # B is built and marked, never started
+        pointer = t3core.activated(pointer, self.C)
+        self.assertEqual((pointer["current"], pointer["previous"]), (self.C, self.A))
+        target = t3core.rollback_target(pointer)
+        self.assertEqual((target["build"], target["basis"]), (self.A, "run"))
+        self.assertEqual(t3core.describe_target(target), "last run 2026-11-27 08:02")
+        rolled = t3core.rolled_back(pointer)
+        self.assertEqual((rolled["current"], rolled["previous"], rolled["rejected"]), (self.A, self.C, [self.C]))
+
+    def test_a_pointer_without_the_new_fields_keeps_working(self):
+        pointer = {"current": self.C, "previous": self.B, "history": []}
+        target = t3core.rollback_target(pointer)
+        self.assertEqual((target["build"], target["basis"]), (self.B, "previous"))
+        self.assertIn("may never have been started", t3core.describe_target(target))
+        self.assertEqual(t3core.rolled_back(pointer)["current"], self.B)
+        self.assertEqual(t3core.activated(pointer, self.D)["previous"], self.C)  # today's behaviour
+        self.assertIsNone(t3core.rollback_target({"current": self.A}))
+
+    def test_last_run_is_the_current_build_goes_to_the_one_run_before(self):
+        pointer = {"current": self.C, "previous": self.B}
+        for name in (self.A, self.C):
+            pointer = t3core.record_run(pointer, name)
+        self.assertEqual(t3core.rollback_target(pointer)["build"], self.A)
+        self.assertEqual(t3core.record_run(pointer, self.C)["runs"][-1]["build"], self.C)
+        self.assertEqual(len(t3core.record_run(pointer, self.C)["runs"]), 2)
+
+    def test_a_build_rolled_back_from_is_not_the_target_again(self):
+        pointer = {"current": self.C, "previous": None}
+        for name in (self.A, self.B, self.C):
+            pointer = t3core.record_run(pointer, name)
+        pointer = t3core.rolled_back(pointer)
+        self.assertEqual(pointer["current"], self.B)
+        self.assertEqual(t3core.rollback_target(pointer)["build"], self.A)
+
+    def test_a_build_that_is_gone_is_skipped(self):
+        pointer = {"current": self.C, "previous": self.B}
+        for name in (self.A, self.B, self.C):
+            pointer = t3core.record_run(pointer, name)
+        self.assertEqual(t3core.rollback_target(pointer, lambda name: name != self.B)["build"], self.A)
+
+    def test_a_running_build_counts_as_run_and_is_not_rewritten(self):
+        pointer = t3core.observed({"current": self.B, "previous": None}, {self.A}, at="T1")
+        self.assertEqual(pointer["lastRun"], {"build": self.A, "at": "T1", "source": "observed"})
+        self.assertEqual(t3core.observed(pointer, {self.A}, at="T2"), pointer)
+        self.assertEqual(t3core.describe_target(t3core.rollback_target(pointer)), "seen running T1")
+
+    def test_prune_keeps_the_rollback_target(self):
+        pointer = t3core.activated(t3core.activated(
+            t3core.record_run({"current": self.A}, self.A), self.B), self.C)
+        entries = [self.A, self.A + ".json", self.B, self.B + ".json", self.C, self.D]
+        self.assertEqual(t3core.prune_candidates(entries, pointer, set()), [self.B, self.B + ".json", self.D])
+        self.assertEqual(t3core.protected_builds(pointer, {self.D}), {self.A, self.C, self.D})
+        # The previous build is still kept when it is not the target.
+        pointer = {**pointer, "previous": self.B}
+        self.assertEqual(t3core.prune_candidates(entries, pointer, set()), [self.D])
+
+    def test_launcher_records_each_start(self):
+        config = self.config()
+        t3core.write_json_atomic(config.pointer_path, {"current": self.B, "previous": self.A})
+        t3launch.record_start(config, self.B)
+        pointer = t3core.read_pointer(config.pointer_path)
+        self.assertEqual((pointer["lastRun"]["build"], pointer["lastRun"]["source"]), (self.B, "launcher"))
+        self.assertEqual((pointer["current"], pointer["previous"]), (self.B, self.A))
+
+    def test_rollback_command_uses_the_last_run_build(self):
+        config = self.config()
+        for name in (self.A, self.B, self.C):
+            self.fake_build(config, name)
+        pointer = t3core.activated(t3core.activated(
+            t3core.record_run({"current": self.A}, self.A), self.B), self.C)
+        t3core.write_json_atomic(config.pointer_path, pointer)
+        args = type("Args", (), {"restore_db": None})()
+        with mock.patch.object(t3update, "running_builds", return_value=set()),                 mock.patch.object(t3update, "app_running", return_value=False):
+            self.assertEqual(t3update.cmd_rollback(config, args), 0)
+        result = t3core.read_pointer(config.pointer_path)
+        self.assertEqual((result["current"], result["previous"]), (self.A, self.C))
+
+    def test_status_shows_the_target_and_writes_nothing(self):
+        config = self.config()
+        self.fake_build(config, self.A)
+        t3core.write_json_atomic(config.pointer_path, {"current": self.C, "previous": self.B, "runs": [
+            {"build": self.A, "at": "2026-11-27T08:02:11", "source": "launcher"}], "history": []})
+        before = config.pointer_path.read_bytes()
+        lines = []
+        with mock.patch.object(t3update, "running_builds", return_value={self.C}),                 mock.patch.object(t3update, "launcher_running", return_value=False),                 mock.patch.object(t3update, "log", side_effect=lines.append):
+            t3update.cmd_status(config, type("Args", (), {"fetch": False})())
+        text = chr(10).join(lines)
+        self.assertIn("last run 2026-11-27 08:02", text)
+        self.assertRegex(text, r"rollback: +aaaaaaaaa")
+        self.assertRegex(text, r"previous: +bbbbbbbbb")
+        self.assertEqual(config.pointer_path.read_bytes(), before)
+
+
 class GitParsing(unittest.TestCase):
     def test_ahead_behind(self):
         self.assertEqual(t3core.parse_ahead_behind("3\t120\n"), (3, 120))

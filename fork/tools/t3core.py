@@ -224,31 +224,94 @@ def now_stamp():
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+RUN_HISTORY = 10
+
+
+def short_time(stamp):
+    return re.sub(r"^(\d{4}-\d\d-\d\d)T", r"\g<1> ", str(stamp or "unknown"))[:16]
+
+
+def record_run(pointer, name, at=None, source="launcher"):
+    """The pointer after `name` was started (source "launcher") or seen running (source "observed").
+    `runs` lists each build once, newest last; `lastRun` is its newest entry. Old launchers ignore both."""
+    result = dict(pointer)
+    if not name:
+        return result
+    runs = [run for run in pointer.get("runs") or [] if run.get("build") != name]
+    runs.append({"build": name, "at": at or now_stamp(), "source": source})
+    result["runs"] = runs[-RUN_HISTORY:]
+    result["lastRun"] = result["runs"][-1]
+    return result
+
+
+def observed(pointer, running, at=None):
+    """Builds a process is running from were run, whoever started them (the old Windows launcher
+    records nothing). One already recorded as the latest run keeps its time."""
+    result = dict(pointer)
+    for name in sorted(running):
+        runs = result.get("runs") or []
+        if not runs or runs[-1].get("build") != name:
+            result = record_run(result, name, at, "observed")
+    return result
+
+
+def rollback_target(pointer, available=None):
+    """Where `rollback` goes: the newest build that was actually run and is not the current one (nor
+    one rolled back from before). Without any, the old behaviour: `previous`, never confirmed to
+    have run. Returns {"build", "basis": "run" | "previous", "at", "source"} or None."""
+    current = pointer.get("current")
+    skip = set(pointer.get("rejected") or [])
+    for run in reversed(pointer.get("runs") or []):
+        name = run.get("build")
+        if name and name != current and name not in skip and (available is None or available(name)):
+            return {"build": name, "basis": "run", "at": run.get("at"), "source": run.get("source")}
+    previous = pointer.get("previous")
+    if previous and previous != current and (available is None or available(previous)):
+        return {"build": previous, "basis": "previous", "at": None, "source": None}
+    return None
+
+
+def describe_target(target):
+    if target is None:
+        return "none"
+    if target["basis"] == "run":
+        what = "seen running" if target.get("source") == "observed" else "last run"
+        return f"{what} {short_time(target.get('at'))}"
+    return "no other build is known to have run; the build before the current one, which may never have been started"
+
+
 def activated(pointer, name, pending_backup=None, at=None):
-    """The pointer after making `name` current. Keeps unknown keys (the launcher adds lastDbBackup)."""
+    """The pointer after making `name` current. Keeps unknown keys (the launcher adds lastDbBackup).
+    `previous` stays the rollback target: the last build that actually ran, not a never-run build
+    that was only current in between."""
     if pointer.get("current") == name:
         return dict(pointer)
     result = dict(pointer)
     result["history"] = list(pointer.get("history") or []) + [
         {"at": at or now_stamp(), "from": pointer.get("current"), "to": name}]
-    result["previous"], result["current"] = pointer.get("current"), name
-    # Start_T3CodeRelease.pyw and t3launch.py take this backup right before the first start.
-    result["pendingDbBackup"] = pending_backup
     if name in (pointer.get("rejected") or []):
         result["rejected"] = [other for other in pointer["rejected"] if other != name]
+    target = rollback_target({**result, "current": name})
+    result["previous"] = target["build"] if target and target["basis"] == "run" else pointer.get("current")
+    result["current"] = name
+    # Start_T3CodeRelease.pyw and t3launch.py take this backup right before the first start.
+    result["pendingDbBackup"] = pending_backup
     return result
 
 
-def rolled_back(pointer, at=None):
-    """The pointer after going back to the previous build. The build left behind is remembered in
-    `rejected`, so an unattended update does not bring it straight back."""
-    if not pointer.get("previous"):
+def rolled_back(pointer, at=None, target=None):
+    """The pointer after going back to `target` (default: the rollback target). The build left behind
+    is remembered in `rejected`, so an unattended update does not bring it straight back."""
+    if target is None:
+        found = rollback_target(pointer)
+        target = found["build"] if found else None
+    if not target:
         raise ValueError("No previous build recorded.")
     result = dict(pointer)
     left = pointer.get("current")
     result["history"] = list(pointer.get("history") or []) + [
-        {"at": at or now_stamp(), "from": left, "to": pointer["previous"], "rollback": True}]
-    result["current"], result["previous"] = pointer["previous"], left
+        {"at": at or now_stamp(), "from": left, "to": target, "rollback": True}]
+    result["current"], result["previous"] = target, left
     result["pendingDbBackup"] = None
     rejected = [name for name in pointer.get("rejected") or [] if name != left]
     result["rejected"] = (rejected + [left])[-10:] if left else rejected
@@ -285,7 +348,9 @@ def build_name(sha):
 # ---------------------------------------------------------------- prune selection
 
 def protected_builds(pointer, running):
-    return {name for name in (pointer.get("current"), pointer.get("previous"), *running) if name}
+    target = rollback_target(observed(pointer, running))
+    return {name for name in (pointer.get("current"), pointer.get("previous"), target and target["build"],
+                              *running) if name}
 
 
 def prune_candidates(entries, pointer, running):
