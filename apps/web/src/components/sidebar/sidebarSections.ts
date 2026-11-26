@@ -101,7 +101,7 @@ export function sidebarSectionRowId(id: string) {
   return `custom-section:${id}`;
 }
 
-function indexSidebarSections(sections: readonly CustomSidebarSection[]) {
+export function indexSidebarSections(sections: readonly CustomSidebarSection[]) {
   const manual = new Map(
     sections.flatMap((section) => section.threadKeys.map((key) => [key, section.id] as const)),
   );
@@ -390,10 +390,13 @@ export function splitCustomSidebarSections(
       preferredIds: section.threadKeys,
       getId: threadShellKey,
     });
+    const shown = section.collapsed ? routeThreadOnly(threads, routeRowThreadKey) : threads;
     return {
       section,
-      count: threads.length,
-      threads: section.collapsed ? routeThreadOnly(threads, routeRowThreadKey) : threads,
+      threads: shown,
+      /** The closed section's rows its header lamp speaks for: all but the open chat's row. */
+      hiddenThreads:
+        shown.length === 0 ? threads : threads.filter((thread) => !shown.includes(thread)),
     };
   });
   return {

@@ -12805,5 +12805,14 @@
   "73fd5fcbc9ec5336": "폴더에서 채팅 시작 중지",
   "167bb05a2216595f": "새 채팅을 폴더에서 시작",
   "f7739980ddc64032": "폴더 사용",
-  "8dd9cdf76f886aba": "폴더 “{folder}”이(가) 더 이상 프로젝트로 존재하지 않습니다."
+  "8dd9cdf76f886aba": "폴더 “{folder}”이(가) 더 이상 프로젝트로 존재하지 않습니다.",
+  "e81ef15d9d6cfd02": "{count, plural, other {채팅 {count}개 작업 중}}",
+  "7082610c50af86f2": "{count, plural, other {채팅 {count}개가 기다리고 있습니다}}",
+  "57a16b1d7829f4d7": "{count, plural, other {{count}개 승인 필요}}",
+  "1f571f7541d76bb9": "{count, plural, other {{count}개 답변 필요}}",
+  "9279089b65e8434e": "{count, plural, other {{count}개 게스트 요청}}",
+  "9ca4894e6d153dcb": "{count}개 사용량 한도 도달",
+  "57b7688c78b33028": "{count}개 실패",
+  "6b87a6cb8bc4b636": "{count, plural, other {읽지 않은 답장 {count}개}}",
+  "f1851f105be1e49f": "{count}개 작업 중"
 }

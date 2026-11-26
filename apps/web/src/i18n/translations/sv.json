@@ -12875,5 +12875,14 @@
   "73fd5fcbc9ec5336": "Sluta starta chattar i en mapp",
   "167bb05a2216595f": "Starta nya chattar i en mapp",
   "f7739980ddc64032": "Använd mapp",
-  "8dd9cdf76f886aba": "Mappen ”{folder}” finns inte längre som projekt."
+  "8dd9cdf76f886aba": "Mappen ”{folder}” finns inte längre som projekt.",
+  "e81ef15d9d6cfd02": "{count, plural, one {{count} chatt arbetar} other {{count} chattar arbetar}}",
+  "7082610c50af86f2": "{count, plural, one {{count} chatt väntar på dig} other {{count} chattar väntar på dig}}",
+  "57a16b1d7829f4d7": "{count, plural, one {{count} behöver godkännas} other {{count} behöver godkännas}}",
+  "1f571f7541d76bb9": "{count, plural, one {{count} väntar på ditt svar} other {{count} väntar på ditt svar}}",
+  "9279089b65e8434e": "{count, plural, one {{count} har en gästförfrågan} other {{count} har gästförfrågningar}}",
+  "9ca4894e6d153dcb": "{count} har nått användningsgränsen",
+  "57b7688c78b33028": "{count} misslyckades",
+  "6b87a6cb8bc4b636": "{count, plural, one {{count} oläst svar} other {{count} olästa svar}}",
+  "f1851f105be1e49f": "{count} arbetar"
 }

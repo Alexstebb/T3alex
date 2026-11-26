@@ -12809,5 +12809,14 @@
   "73fd5fcbc9ec5336": "フォルダーでのチャット開始をやめる",
   "167bb05a2216595f": "新しいチャットをフォルダーで開始",
   "f7739980ddc64032": "フォルダーを使用",
-  "8dd9cdf76f886aba": "フォルダー「{folder}」はプロジェクトとして存在しなくなりました。"
+  "8dd9cdf76f886aba": "フォルダー「{folder}」はプロジェクトとして存在しなくなりました。",
+  "e81ef15d9d6cfd02": "{count, plural, other {{count} 件のチャットが作業中}}",
+  "7082610c50af86f2": "{count, plural, other {{count} 件のチャットがあなたを待っています}}",
+  "57a16b1d7829f4d7": "{count, plural, other {{count} 件が承認待ち}}",
+  "1f571f7541d76bb9": "{count, plural, other {{count} 件が回答待ち}}",
+  "9279089b65e8434e": "{count, plural, other {{count} 件にゲストのリクエスト}}",
+  "9ca4894e6d153dcb": "{count} 件が使用量の上限に到達",
+  "57b7688c78b33028": "{count} 件が失敗",
+  "6b87a6cb8bc4b636": "{count, plural, other {未読の返信 {count} 件}}",
+  "f1851f105be1e49f": "{count} 件が作業中"
 }

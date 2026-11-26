@@ -36,6 +36,12 @@ import {
 } from "../../hooks/useSettings";
 import { cn, randomUUID } from "../../lib/utils";
 import { isScheduledWorkspacePath } from "../sidebar/mainAppLocation";
+import { SidebarSectionLamp } from "../sidebar/SidebarSectionLamp";
+import {
+  countSectionLampTones,
+  resolveSectionLamp,
+  type SectionLamp,
+} from "../sidebar/sidebarSectionLamp.logic";
 import { Button } from "../ui/button";
 import { Dialog, DialogClose, DialogFooter, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -64,6 +70,7 @@ import {
   moveScheduledTaskToSection,
   removeScheduledTaskSection,
   ScheduledTaskOrganization,
+  scheduledTaskLampTone,
   scheduledTaskOrganizationKey,
   scheduledTaskState,
   toggleScheduledTaskGroup,
@@ -191,15 +198,18 @@ export function ScheduledTaskNavigation(props: {
     closeNameDialog();
   };
 
-  const unreadIn = (entries: readonly { key: string; row: ScheduledTaskNavigationRow }[]) =>
-    entries.filter(({ key, row }) => isScheduledTaskUnread(organization, key, row.task)).length;
+  const lampOf = (entries: readonly { key: string; row: ScheduledTaskNavigationRow }[]) =>
+    resolveSectionLamp(
+      countSectionLampTones(
+        entries.map(({ key, row }) => scheduledTaskLampTone(organization, key, row.task)),
+      ),
+    );
 
   const groupProps = (
     id: ScheduledTaskGroupId,
     entries: readonly { key: string; row: ScheduledTaskNavigationRow }[],
   ) => ({
-    count: entries.length,
-    unread: unreadIn(entries),
+    lamp: lampOf(entries),
     collapsed: organization.collapsedGroups.includes(id),
     onToggle: () => setOrganization((current) => toggleScheduledTaskGroup(current, id)),
   });
@@ -255,8 +265,7 @@ export function ScheduledTaskNavigation(props: {
             <ScheduledSubsection
               key={section.id}
               section={section}
-              count={rows.length}
-              unread={unreadIn(rows)}
+              lamp={lampOf(rows)}
               onToggle={() =>
                 setOrganization((current) => ({
                   ...current,
@@ -328,8 +337,7 @@ export function ScheduledTaskNavigation(props: {
 function ScheduledNavigationGroup(props: {
   readonly title: string;
   readonly icon: React.ReactNode;
-  readonly count: number;
-  readonly unread: number;
+  readonly lamp: SectionLamp | null;
   readonly collapsed: boolean;
   readonly onToggle: () => void;
   readonly children: React.ReactNode;
@@ -347,8 +355,7 @@ function ScheduledNavigationGroup(props: {
         >
           {props.icon}
           <span className="min-w-0 flex-1 truncate">{props.title}</span>
-          {props.collapsed ? <span className="tabular-nums">{props.count}</span> : null}
-          {props.collapsed && props.unread > 0 ? <UnreadCount count={props.unread} /> : null}
+          {props.collapsed && props.lamp ? <SidebarSectionLamp lamp={props.lamp} /> : null}
           <ChevronDownIcon
             aria-hidden
             className={cn("transition-transform", props.collapsed && "-rotate-90")}
@@ -362,14 +369,9 @@ function ScheduledNavigationGroup(props: {
   );
 }
 
-function UnreadCount({ count }: { readonly count: number }) {
-  return <span className="text-xs font-medium tabular-nums text-primary">{count}</span>;
-}
-
 function ScheduledSubsection(props: {
   readonly section: ScheduledTaskSection;
-  readonly count: number;
-  readonly unread: number;
+  readonly lamp: SectionLamp | null;
   readonly onToggle: () => void;
   readonly onRename: () => void;
   readonly onRemove: () => void;
@@ -393,14 +395,7 @@ function ScheduledSubsection(props: {
             )}
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{props.section.name}</span>
-          {props.section.collapsed && props.count > 0 ? (
-            <span className="text-xs tabular-nums text-sidebar-muted-foreground">
-              {props.count}
-            </span>
-          ) : null}
-          {props.section.collapsed && props.unread > 0 ? (
-            <UnreadCount count={props.unread} />
-          ) : null}
+          {props.section.collapsed && props.lamp ? <SidebarSectionLamp lamp={props.lamp} /> : null}
         </button>
         <Menu>
           <MenuTrigger

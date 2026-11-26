@@ -12863,5 +12863,14 @@
   "73fd5fcbc9ec5336": "Dejar de iniciar chats en una carpeta",
   "167bb05a2216595f": "Iniciar chats nuevos en una carpeta",
   "f7739980ddc64032": "Usar carpeta",
-  "8dd9cdf76f886aba": "La carpeta «{folder}» ya no existe como proyecto."
+  "8dd9cdf76f886aba": "La carpeta «{folder}» ya no existe como proyecto.",
+  "e81ef15d9d6cfd02": "{count, plural, one {{count} chat está trabajando} other {{count} chats están trabajando}}",
+  "7082610c50af86f2": "{count, plural, one {{count} chat te está esperando} other {{count} chats te están esperando}}",
+  "57a16b1d7829f4d7": "{count, plural, one {{count} necesita aprobación} other {{count} necesitan aprobación}}",
+  "1f571f7541d76bb9": "{count, plural, one {{count} necesita tu respuesta} other {{count} necesitan tu respuesta}}",
+  "9279089b65e8434e": "{count, plural, one {{count} tiene una solicitud de invitado} other {{count} tienen solicitudes de invitados}}",
+  "9ca4894e6d153dcb": "{count} alcanzaron el límite de uso",
+  "57b7688c78b33028": "{count} con error",
+  "6b87a6cb8bc4b636": "{count, plural, one {{count} respuesta sin leer} other {{count} respuestas sin leer}}",
+  "f1851f105be1e49f": "{count} en curso"
 }

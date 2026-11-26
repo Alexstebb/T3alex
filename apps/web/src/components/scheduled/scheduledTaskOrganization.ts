@@ -8,6 +8,12 @@ import {
   type ScheduledTaskOrganization,
 } from "@t3tools/contracts";
 
+import {
+  countSectionLampTones,
+  resolveSectionLamp,
+  type SectionLampTone,
+} from "../sidebar/sidebarSectionLamp.logic";
+
 export { ScheduledTaskOrganization } from "@t3tools/contracts";
 export type { ScheduledTaskSection } from "@t3tools/contracts";
 
@@ -149,21 +155,37 @@ export function markScheduledTaskUnseen(
   return { ...organization, lastSeenAt };
 }
 
-/** Whether any task shown in the list has an unseen result; tasks aged out of the list do not count. */
-export function hasUnreadScheduledTask(
+/** What a task adds to a closed group's lamp: an unseen result, else a run in progress. */
+export function scheduledTaskLampTone(
+  organization: ScheduledTaskOrganization,
+  taskKey: string,
+  task: ScheduledTaskResult,
+): SectionLampTone | null {
+  if (isScheduledTaskUnread(organization, taskKey, task)) {
+    return task.lastRunStatus === "failed" ? "failed" : "done";
+  }
+  return task.lastRunStatus === "running" ? "working" : null;
+}
+
+/** The collapsed Scheduled header's lamp; tasks aged out of the list do not count. */
+export function scheduledSidebarLamp(
   rows: readonly { readonly environmentId: EnvironmentId; readonly task: ScheduledTask }[],
   organization: ScheduledTaskOrganization,
   now: number,
-): boolean {
+) {
   const sectioned = indexScheduledTaskSections(organization);
-  return rows.some(({ environmentId, task }) => {
-    const key = scheduledTaskOrganizationKey(environmentId, task.id);
-    const listed =
-      organization.pinnedTaskKeys.includes(key) ||
-      sectioned.has(key) ||
-      automaticScheduledGroup(task, now) !== "hidden";
-    return listed && isScheduledTaskUnread(organization, key, task);
-  });
+  return resolveSectionLamp(
+    countSectionLampTones(
+      rows.map(({ environmentId, task }) => {
+        const key = scheduledTaskOrganizationKey(environmentId, task.id);
+        const listed =
+          organization.pinnedTaskKeys.includes(key) ||
+          sectioned.has(key) ||
+          automaticScheduledGroup(task, now) !== "hidden";
+        return listed ? scheduledTaskLampTone(organization, key, task) : null;
+      }),
+    ),
+  );
 }
 
 /** Drops every trace of a deleted task: pin, subsection placement and last-seen time. */

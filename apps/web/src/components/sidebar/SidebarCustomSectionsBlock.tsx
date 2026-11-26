@@ -67,6 +67,7 @@ type SectionMenuAction = `section:${string}`;
 type SidebarDraftBlockProps = ComponentProps<typeof SidebarDraftBlock>;
 
 const NO_DRAFT_IDS: readonly DraftId[] = [];
+const NO_THREADS: readonly EnvironmentThreadShell[] = [];
 
 function isSectionMenuAction(action: string): action is SectionMenuAction {
   return action.startsWith("section:");
@@ -270,7 +271,7 @@ export function useSidebarCustomSections(input: {
       const rows: ReactNode[] = [];
       const connected = new Set(input.connectedEnvironmentIds);
       for (const [index, group] of threads.groups.entries()) {
-        const { section, count } = group;
+        const { section } = group;
         const target = sidebarSectionChatProject(section, (ref) => {
           const key = scopedProjectKey(ref);
           return (
@@ -285,7 +286,7 @@ export function useSidebarCustomSections(input: {
             key={section.id}
             section={section}
             isDropTarget={dropTargetId === section.id}
-            count={count}
+            hiddenThreads={section.collapsed ? group.hiddenThreads : NO_THREADS}
             folderName={target?.available ? target.project?.title : undefined}
             // Projects of an environment that is not connected yet are unknown, not missing.
             folderMissing={

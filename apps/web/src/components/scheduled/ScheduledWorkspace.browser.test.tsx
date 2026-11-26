@@ -278,12 +278,15 @@ function renderWorkspace(fixture: ReturnType<typeof createFixture>) {
 }
 
 async function openTask(screen: Awaited<ReturnType<typeof renderWorkspace>>, name: RegExp) {
-  await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
   await userEvent.click(screen.getByRole("link", { name }));
 }
 
 const runButtons = (screen: Awaited<ReturnType<typeof renderWorkspace>>) =>
   screen.getByRole("complementary", { name: "Runs" }).getByRole("button", { name: /Completed/ });
+
+// The header's name also reads out its status light when one is lit.
+const SCHEDULED_HEADER = /^Scheduled( \d.*)?$/;
 
 describe("Scheduled task chats", () => {
   it("opens a task in its latest run's chat with the runs beside it and switches runs there", async () => {
@@ -382,7 +385,7 @@ describe("Scheduled task chats", () => {
     using fixture = createFixture({ initialEntry: "/local/thread-a" });
     await using screen = await renderWorkspace(fixture);
     await expect.element(screen.getByText("Chat for thread-a")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     const link = screen.getByRole("link", { name: /^Daily briefing/ });
     await expect.element(link).toHaveAttribute("aria-current", "page");
     await expect.element(runButtons(screen).last()).toHaveAttribute("aria-current", "true");
@@ -539,7 +542,7 @@ describe("Scheduled task chats", () => {
     using _organization = withOrganization();
     using fixture = createFixture({ task: { ...task, enabled: true } });
     await using screen = await renderWorkspace(fixture);
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     await userEvent.click(screen.getByRole("button", { name: "Options for Daily briefing" }));
     await userEvent.click(page.getByRole("menuitem", { name: "Pause" }));
     await vi.waitFor(() =>
@@ -576,7 +579,7 @@ describe("Scheduled task chats", () => {
       task: { ...task, schedule: { type: "once", runAt: "2026-11-20T09:00:00.000Z" } },
     });
     await using screen = await renderWorkspace(fixture);
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     await userEvent.click(screen.getByRole("button", { name: "Options for Daily briefing" }));
     await expect.element(page.getByRole("menuitem", { name: "Edit" })).toBeVisible();
     await expect.element(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
@@ -589,14 +592,16 @@ describe("Scheduled task chats", () => {
     using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     const allTasks = screen.getByRole("button", { name: /^All tasks/ });
     await expect.element(allTasks).toHaveAttribute("aria-expanded", "true");
     await expect.element(screen.getByRole("link", { name: "Daily briefing Paused" })).toBeVisible();
 
     await userEvent.click(allTasks);
     await expect.element(allTasks).toHaveAttribute("aria-expanded", "false");
-    await expect.element(screen.getByRole("button", { name: "All tasks 1" })).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "All tasks", exact: true }))
+      .toBeVisible();
     await expect
       .element(screen.getByRole("link", { name: "Daily briefing Paused" }))
       .not.toBeInTheDocument();
@@ -619,7 +624,7 @@ describe("Scheduled task chats", () => {
     using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     await userEvent.click(screen.getByRole("button", { name: "New subsection" }));
     await userEvent.fill(page.getByRole("textbox", { name: "Subsection name" }), "Support");
     await userEvent.click(page.getByRole("button", { name: "Create subsection" }));
@@ -633,7 +638,7 @@ describe("Scheduled task chats", () => {
     await userEvent.click(screen.getByRole("button", { name: "Options for Daily briefing" }));
     await userEvent.click(page.getByRole("menuitem", { name: "Pin task" }));
     await expect.element(screen.getByRole("heading", { name: "Pinned" })).toBeVisible();
-    const group = screen.getByRole("button", { name: "Scheduled", exact: true });
+    const group = screen.getByRole("button", { name: SCHEDULED_HEADER });
     await userEvent.click(group);
     await expect.element(screen.getByRole("heading", { name: "Pinned" })).not.toBeInTheDocument();
     await userEvent.click(group);
@@ -665,18 +670,18 @@ describe("Scheduled task chats", () => {
       ]),
     );
     await using screen = await renderWorkspace(fixture);
-    const header = screen.getByRole("button", { name: "Scheduled", exact: true });
+    const header = screen.getByRole("button", { name: SCHEDULED_HEADER });
     await expect.element(header).toHaveAttribute("aria-expanded", "false");
     const pinned = screen.getByRole("link", { name: /^Daily briefing/ });
     await expect.element(pinned).toBeVisible();
     expect(pinned.element().querySelector(".border-info")).not.toBeNull();
     await expect.element(screen.getByRole("link", { name: /^Weekly/ })).not.toBeInTheDocument();
-    // Only the hidden task flags the collapsed header.
-    expect(header.element().querySelector("[data-unread]")).not.toBeNull();
+    // Only the hidden task lights the collapsed header.
+    expect(header.element().querySelector('[data-section-lamp="done"]')).not.toBeNull();
 
     await act(() => fixture.registry.set(tasksAtom, [{ ...task, enabled: true }]));
     await vi.waitFor(() => expect(pinned.element().querySelector("[data-unread]")).not.toBeNull());
-    expect(header.element().querySelector("[data-unread]")).toBeNull();
+    expect(header.element().querySelector("[data-section-lamp]")).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Options for Daily briefing" }));
     await expect.element(page.getByRole("menuitem", { name: "Unpin task" })).toBeVisible();
@@ -701,7 +706,7 @@ describe("Scheduled unread results", () => {
     using _organization = withOrganization(unseen);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     const link = screen.getByRole("link", { name: /^Daily briefing/ });
     await expect.element(link).toBeVisible();
     expect(unreadDot(link)).not.toBeNull();
@@ -728,7 +733,7 @@ describe("Scheduled unread results", () => {
     using fixture = createFixture({ initialEntry: "/local/thread-a" });
     await using screen = await renderWorkspace(fixture);
     await expect.element(screen.getByText("Chat for thread-a")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     await expect
       .element(screen.getByRole("link", { name: /^Daily briefing/ }))
       .toHaveAttribute("aria-current", "page");
@@ -741,7 +746,7 @@ describe("Scheduled unread results", () => {
     using _organization = withOrganization(unseen);
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     const link = screen.getByRole("link", { name: /^Daily briefing/ });
     expect(unreadDot(link)).not.toBeNull();
 
@@ -765,7 +770,7 @@ describe("Scheduled unread results", () => {
       task: { ...task, enabled: true, lastRunStatus: "failed" },
     });
     await using screen = await renderWorkspace(fixture);
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     const read = screen.getByRole("link", { name: "Daily briefing Failed" });
     await expect.element(read).toBeVisible();
     expect(unreadDot(read)).toBeNull();
@@ -777,21 +782,26 @@ describe("Scheduled unread results", () => {
     expect(unreadDot(unread)?.firstElementChild?.className).toContain("bg-destructive");
   });
 
-  it("counts unread tasks in a collapsed group and flags a collapsed Scheduled header", async () => {
+  it("lights a collapsed group and a collapsed Scheduled header for an unread result", async () => {
     using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
     using _organization = withOrganization({ ...unseen, collapsedGroups: [] });
     using fixture = createFixture();
     await using screen = await renderWorkspace(fixture);
-    const header = screen.getByRole("button", { name: "Scheduled", exact: true });
-    expect(header.element().querySelector("[data-unread]")).not.toBeNull();
+    const header = screen.getByRole("button", { name: SCHEDULED_HEADER });
+    const lamp = '[data-section-lamp="done"]';
+    expect(header.element().querySelector(lamp)).not.toBeNull();
+    await expect
+      .element(header.getByRole("img", { name: "1 chat is waiting for you, 1 unread reply" }))
+      .toBeVisible();
     await userEvent.click(header);
-    expect(header.element().querySelector("[data-unread]")).toBeNull();
+    expect(header.element().querySelector(lamp)).toBeNull();
 
     const allTasks = screen.getByRole("button", { name: /^All tasks/ });
+    expect(allTasks.element().querySelector(lamp)).toBeNull();
     await userEvent.click(allTasks);
-    await expect.element(allTasks).toHaveTextContent("All tasks11");
-    await userEvent.click(screen.getByRole("button", { name: "Scheduled", exact: true }));
+    await vi.waitFor(() => expect(allTasks.element().querySelector(lamp)).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     await expect.element(header).toBeVisible();
-    expect(header.element().querySelector("[data-unread]")).not.toBeNull();
+    expect(header.element().querySelector(lamp)).not.toBeNull();
   });
 });

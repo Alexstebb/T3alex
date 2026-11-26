@@ -12868,5 +12868,14 @@
   "73fd5fcbc9ec5336": "Ne plus démarrer les chats dans un dossier",
   "167bb05a2216595f": "Démarrer les nouveaux chats dans un dossier",
   "f7739980ddc64032": "Utiliser le dossier",
-  "8dd9cdf76f886aba": "Le dossier « {folder} » n’existe plus en tant que projet."
+  "8dd9cdf76f886aba": "Le dossier « {folder} » n’existe plus en tant que projet.",
+  "e81ef15d9d6cfd02": "{count, plural, one {{count} chat en cours} other {{count} chats en cours}}",
+  "7082610c50af86f2": "{count, plural, one {{count} chat vous attend} other {{count} chats vous attendent}}",
+  "57a16b1d7829f4d7": "{count, plural, one {{count} attend une approbation} other {{count} attendent une approbation}}",
+  "1f571f7541d76bb9": "{count, plural, one {{count} attend votre réponse} other {{count} attendent votre réponse}}",
+  "9279089b65e8434e": "{count, plural, one {{count} a une demande d’invité} other {{count} ont des demandes d’invités}}",
+  "9ca4894e6d153dcb": "{count} ont atteint la limite d’utilisation",
+  "57b7688c78b33028": "{count} en échec",
+  "6b87a6cb8bc4b636": "{count, plural, one {{count} réponse non lue} other {{count} réponses non lues}}",
+  "f1851f105be1e49f": "{count} en cours"
 }

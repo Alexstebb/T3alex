@@ -11,11 +11,12 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useThreadRouteRef } from "../../hooks/useThreadRouteTarget";
 import { cn } from "../../lib/utils";
 import { isScheduledWorkspacePath } from "../sidebar/mainAppLocation";
+import { SidebarSectionLamp } from "../sidebar/SidebarSectionLamp";
 import { Button } from "../ui/button";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ScheduledTaskNavigation } from "./ScheduledTaskNavigation";
-import { hasUnreadScheduledTask, scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
+import { scheduledSidebarLamp, scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
 import { validateScheduledWorkspaceSearch } from "./scheduledWorkspaceSearch";
 import { useScheduledThreadTask } from "./useScheduledThreadTask";
 import { useScheduledWorkspaceTasks } from "./useScheduledWorkspaceTasks";
@@ -43,14 +44,16 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
   const nowMinute = useNowMinute();
   const selectedKey = useSelectedScheduledTaskKey();
   const loading = !isReady || sources.some(({ data, error }) => data === null && error === null);
-  // Pinned tasks stay listed while collapsed, so only the hidden ones flag the header.
+  // Pinned tasks stay listed while collapsed, so only the hidden ones light the header.
   const hiddenRows = rows.filter(
     (row) =>
       !organization.pinnedTaskKeys.includes(
         scheduledTaskOrganizationKey(row.environmentId, row.task.id),
       ),
   );
-  const hasUnread = hasUnreadScheduledTask(hiddenRows, organization, Date.parse(nowMinute));
+  const lamp = collapsed
+    ? scheduledSidebarLamp(hiddenRows, organization, Date.parse(nowMinute))
+    : null;
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
   };
@@ -75,13 +78,7 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
             <T>Scheduled</T>
           </span>
-          {collapsed && hasUnread ? (
-            <span
-              aria-hidden
-              data-unread=""
-              className="size-1.5 shrink-0 rounded-full bg-primary"
-            />
-          ) : null}
+          {lamp ? <SidebarSectionLamp lamp={lamp} /> : null}
           <ChevronDownIcon
             aria-hidden
             className={cn(

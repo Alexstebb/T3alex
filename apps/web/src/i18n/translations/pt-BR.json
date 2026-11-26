@@ -12868,5 +12868,14 @@
   "73fd5fcbc9ec5336": "Parar de iniciar chats em uma pasta",
   "167bb05a2216595f": "Iniciar novos chats em uma pasta",
   "f7739980ddc64032": "Usar pasta",
-  "8dd9cdf76f886aba": "A pasta “{folder}” não existe mais como projeto."
+  "8dd9cdf76f886aba": "A pasta “{folder}” não existe mais como projeto.",
+  "e81ef15d9d6cfd02": "{count, plural, one {{count} chat trabalhando} other {{count} chats trabalhando}}",
+  "7082610c50af86f2": "{count, plural, one {{count} chat está esperando por você} other {{count} chats estão esperando por você}}",
+  "57a16b1d7829f4d7": "{count, plural, one {{count} precisa de aprovação} other {{count} precisam de aprovação}}",
+  "1f571f7541d76bb9": "{count, plural, one {{count} precisa da sua resposta} other {{count} precisam da sua resposta}}",
+  "9279089b65e8434e": "{count, plural, one {{count} tem uma solicitação de convidado} other {{count} têm solicitações de convidados}}",
+  "9ca4894e6d153dcb": "{count} atingiram o limite de uso",
+  "57b7688c78b33028": "{count} com falha",
+  "6b87a6cb8bc4b636": "{count, plural, one {{count} resposta não lida} other {{count} respostas não lidas}}",
+  "f1851f105be1e49f": "{count} em andamento"
 }

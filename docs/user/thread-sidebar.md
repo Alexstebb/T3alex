@@ -168,7 +168,11 @@ section is off. Each device keeps its own choice.
 On web and desktop, choose **New section** beside the thread search. Drag a thread onto the
 section's name or into its list, or use **Move to section** in the thread's menu.
 You can move several selected threads at once, including threads from different
-projects. Click the section name to collapse it. Use its menu to rename, reorder, or remove it.
+projects. Click the section name to collapse it. A collapsed section lights up when one of its
+chats needs you: the light takes the icon and color of the most urgent one (a question, an
+approval, a failure, or an unread reply) and shows a number when more than one is waiting. A
+section whose chats are only working shows the working icon instead. Hover the light to see what
+is waiting. Use the section's menu to rename, reorder, or remove it.
 Removing a section returns its threads to their usual places. Sections are saved in your browser
 or desktop profile.
 

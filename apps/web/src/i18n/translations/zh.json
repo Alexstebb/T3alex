@@ -12887,5 +12887,14 @@
   "73fd5fcbc9ec5336": "不再在文件夹中开始聊天",
   "167bb05a2216595f": "在文件夹中开始新聊天",
   "f7739980ddc64032": "使用文件夹",
-  "8dd9cdf76f886aba": "文件夹「{folder}」已不再作为项目存在。"
+  "8dd9cdf76f886aba": "文件夹「{folder}」已不再作为项目存在。",
+  "e81ef15d9d6cfd02": "{count, plural, other {{count} 个聊天正在工作}}",
+  "7082610c50af86f2": "{count, plural, other {{count} 个聊天在等你}}",
+  "57a16b1d7829f4d7": "{count, plural, other {{count} 个需要批准}}",
+  "1f571f7541d76bb9": "{count, plural, other {{count} 个需要你回答}}",
+  "9279089b65e8434e": "{count, plural, other {{count} 个有访客请求}}",
+  "9ca4894e6d153dcb": "{count} 个已达到使用上限",
+  "57b7688c78b33028": "{count} 个失败",
+  "6b87a6cb8bc4b636": "{count, plural, other {{count} 条未读回复}}",
+  "f1851f105be1e49f": "{count} 个进行中"
 }

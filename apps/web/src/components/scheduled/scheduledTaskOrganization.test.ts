@@ -8,7 +8,6 @@ import {
   COMPLETED_TASK_VISIBLE_MS,
   EMPTY_SCHEDULED_TASK_ORGANIZATION,
   forgetScheduledTask,
-  hasUnreadScheduledTask,
   isScheduledTaskUnread,
   markScheduledTaskSeen,
   markScheduledTaskUnseen,
@@ -16,6 +15,8 @@ import {
   indexScheduledTaskSections,
   moveScheduledTaskToSection,
   removeScheduledTaskSection,
+  scheduledSidebarLamp,
+  scheduledTaskLampTone,
   scheduledTaskOrganizationKey,
   toggleScheduledTaskGroup,
   toggleScheduledTaskPin,
@@ -195,7 +196,7 @@ describe("unread scheduled results", () => {
     expect(forgetScheduledTask(organization, "missing")).toEqual(organization);
   });
 
-  it("flags the Scheduled header only for tasks that are still listed", () => {
+  it("lights the Scheduled header only for tasks that are still listed", () => {
     const environmentId = "local" as EnvironmentId;
     const old = {
       ...baseTask,
@@ -207,16 +208,36 @@ describe("unread scheduled results", () => {
       runCount: 1,
     } as ScheduledTask;
     const rows = [{ environmentId, task: old }];
-    expect(hasUnreadScheduledTask(rows, organization, now)).toBe(false);
+    expect(scheduledSidebarLamp(rows, organization, now)).toBeNull();
     const key = scheduledTaskOrganizationKey(environmentId, old.id);
-    expect(hasUnreadScheduledTask(rows, { ...organization, pinnedTaskKeys: [key] }, now)).toBe(
-      true,
-    );
+    expect(
+      scheduledSidebarLamp(rows, { ...organization, pinnedTaskKeys: [key] }, now),
+    ).toMatchObject({ tone: "done", waiting: 1 });
     const recent = {
       ...old,
       id: "recent" as ScheduledTaskId,
       lastRunAt: "2026-11-22T08:00:00.000Z",
     };
-    expect(hasUnreadScheduledTask([{ environmentId, task: recent }], organization, now)).toBe(true);
+    expect(
+      scheduledSidebarLamp([{ environmentId, task: recent }], organization, now),
+    ).toMatchObject({ tone: "done", waiting: 1 });
+  });
+
+  it("gives an unseen failure, an unseen result and a running task their own lamp state", () => {
+    const task = (patch: Partial<ScheduledTask>) => ({ ...baseTask, ...patch }) as ScheduledTask;
+    const finished = { lastRunAt: "2026-11-22T08:00:00.000Z" };
+    expect(
+      scheduledTaskLampTone(organization, "a", task({ ...finished, lastRunStatus: "failed" })),
+    ).toBe("failed");
+    expect(
+      scheduledTaskLampTone(organization, "a", task({ ...finished, lastRunStatus: "succeeded" })),
+    ).toBe("done");
+    const seen = { ...organization, lastSeenAt: { a: "2026-11-22T09:00:00.000Z" } };
+    expect(
+      scheduledTaskLampTone(seen, "a", task({ ...finished, lastRunStatus: "succeeded" })),
+    ).toBe(null);
+    expect(scheduledTaskLampTone(seen, "a", task({ ...finished, lastRunStatus: "running" }))).toBe(
+      "working",
+    );
   });
 });
