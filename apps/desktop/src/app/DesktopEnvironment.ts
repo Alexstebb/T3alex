@@ -248,7 +248,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       config.appUserModelIdOverride,
       () => forkBrand?.appId ?? (isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code"),
     ),
-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
+    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment, forkBrand),
     linuxApplicationsDir,
     desktopLauncherPath: config.desktopLauncherPath,
     appImagePath: config.appImagePath,

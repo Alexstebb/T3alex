@@ -386,6 +386,26 @@ describe("DesktopLinuxUrlHandler", () => {
     });
   });
 
+  it.effect("leaves the URL scheme to another app when protocol registration is skipped", () => {
+    const recorded = emptyRecording();
+
+    return Effect.gen(function* () {
+      yield* runRegister(recorded, {
+        environment: {
+          skipProtocolRegistration: true,
+          linuxDesktopEntryName: "com.t3tools.t3code.alex.desktop",
+        },
+      });
+
+      assert.equal(
+        recorded.files[0]?.path,
+        "/home/alice/.local/share/applications/com.t3tools.t3code.alex.desktop",
+      );
+      assert.notInclude(recorded.files[0]?.content, "MimeType=");
+      assert.deepEqual(recorded.commands, []);
+    });
+  });
+
   it.effect("never fails startup when registration cannot complete", () => {
     const desktopDatabaseFailed = emptyRecording();
     const xdgMimeFailed = emptyRecording();

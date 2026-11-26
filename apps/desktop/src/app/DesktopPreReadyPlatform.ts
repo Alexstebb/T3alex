@@ -13,6 +13,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
 import { trimmedString } from "./DesktopConfig.ts";
+import { bakedForkBrand } from "./DesktopForkBrand.ts";
 import { resolveDesktopAppBranding } from "./DesktopEnvironment.ts";
 import {
   renderUrlHandlerDesktopEntry,
@@ -61,6 +62,9 @@ const LinuxDesktopEntryConfig = Config.all({
   appImagePath: trimmedString("APPIMAGE"),
   // electron-updater sets this on the AppImage it relaunches after installing an update.
   relaunchedByUpdater: trimmedString("APPIMAGE_SILENT_INSTALL"),
+  skipProtocolRegistration: Config.Boolean("T3CODE_DESKTOP_SKIP_PROTOCOL_REGISTRATION").pipe(
+    Config.withDefault(false),
+  ),
 });
 
 /** @public */
@@ -153,7 +157,10 @@ export const make = Effect.gen(function* () {
                   () => linuxDesktopEntryConfig.appImagePath,
                 ),
               ) ?? process.execPath,
-            scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
+            // Same rule as DesktopEnvironment.skipProtocolRegistration.
+            ...(linuxDesktopEntryConfig.skipProtocolRegistration || bakedForkBrand !== undefined
+              ? {}
+              : { scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment) }),
             ...(iconPath === undefined ? {} : { iconPath }),
           }),
           "utf8",

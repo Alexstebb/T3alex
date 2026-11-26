@@ -79,7 +79,8 @@ const escapeUrlHandlerExecTarget = (value: string): string =>
 export function renderUrlHandlerDesktopEntry(input: {
   readonly displayName: string;
   readonly execTarget: string;
-  readonly scheme: string;
+  /** Omitted when this build leaves the URL scheme to another app. */
+  readonly scheme?: string;
   readonly iconPath?: string;
 }): string {
   return [
@@ -91,7 +92,7 @@ export function renderUrlHandlerDesktopEntry(input: {
     "Terminal=false",
     "NoDisplay=true",
     "StartupNotify=false",
-    `MimeType=x-scheme-handler/${input.scheme};`,
+    ...(input.scheme === undefined ? [] : [`MimeType=x-scheme-handler/${input.scheme};`]),
     "",
   ].join("\n");
 }
@@ -175,7 +176,7 @@ export const make = Effect.gen(function* () {
     const content = renderUrlHandlerDesktopEntry({
       displayName: environment.displayName,
       execTarget,
-      scheme,
+      ...(environment.skipProtocolRegistration ? {} : { scheme }),
       ...(environment.isPackaged ? { iconPath } : {}),
     });
     // Avoid truncating the pre-ready entry while the portal may be reading it.
@@ -339,6 +340,8 @@ export const make = Effect.gen(function* () {
     );
 
     yield* installThemeIcons;
+    // The entry still gives the portal and docks an identity; only the scheme claim is skipped.
+    if (environment.skipProtocolRegistration) return;
 
     yield* updateDesktopDatabase.pipe(
       // GIO verifies scheme associations through mimeinfo.cache. A missing cache updater must not block xdg-mime.

@@ -2970,23 +2970,29 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
     buildConfig.afterPack = path.join(repoRoot, "scripts/linux-after-pack.ts");
+    // A branded build gets its own /usr/bin link, launcher and window class, and leaves
+    // t3code:// to the official app (resolveLinuxDesktopEntryName names its entry after appId).
     buildConfig.linux = {
       target: target === "AppImage" ? [target, "deb"] : [target],
-      executableName: "t3code",
+      executableName: forkBrand?.packageName ?? "t3code",
       icon: "icons",
       category: "Development",
       synopsis: "Desktop GUI for coding agents",
       maintainer: "T3 Tools <hello@t3.codes>",
-      protocols: [
-        {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
-        },
-      ],
+      ...(forkBrand
+        ? {}
+        : {
+            protocols: [
+              {
+                name: "T3 Code",
+                schemes: ["t3code", "t3code-dev"],
+              },
+            ],
+          }),
       desktop: {
         entry: {
           // Match Electron's WM_CLASS from setDesktopName so docks use this launcher.
-          StartupWMClass: "com.t3tools.T3Code",
+          StartupWMClass: forkBrand?.appId ?? "com.t3tools.T3Code",
         },
       },
     };
@@ -2999,9 +3005,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     }
     buildConfig.deb = {
       // FPM runs outside the staged app directory, so source paths must be absolute.
+      // A branded package must not own the official package's files, so it ships no AppStream metainfo.
       fpm: [
-        `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
-        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
+        ...(forkBrand
+          ? []
+          : [
+              `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
+            ]),
+        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/${forkBrand?.packageName ?? "t3code"}/copyright`,
       ],
       // Debian 13 and Ubuntu 24.04 use 64-bit-time names; retain old-name fallbacks.
       depends: [

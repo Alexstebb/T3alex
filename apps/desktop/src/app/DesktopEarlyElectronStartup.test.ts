@@ -4,9 +4,11 @@ import { assert, describe, it } from "@effect/vitest";
 
 import {
   restoreEarlyLinuxDeviceScaleFactor,
+  resolveEarlyLinuxElectronOptions,
   resolveEarlyLinuxPasswordStorePreference,
   resolveLinuxDisableFeaturesSwitch,
 } from "./DesktopEarlyElectronStartup.ts";
+import { resolveForkBrand } from "./DesktopForkBrand.ts";
 
 describe("DesktopEarlyElectronStartup", () => {
   const joinPath = NodePath.posix.join;
@@ -23,6 +25,23 @@ describe("DesktopEarlyElectronStartup", () => {
     });
 
     assert.equal(preference, "kwallet6");
+  });
+
+  it("reads a fork-branded build's own settings and names its own desktop entry", () => {
+    const readPaths: string[] = [];
+    const options = resolveEarlyLinuxElectronOptions({
+      env: {},
+      homeDirectory: "/home/user",
+      joinPath,
+      forkBrand: resolveForkBrand("alex"),
+      readFileString: (path) => {
+        readPaths.push(path);
+        return JSON.stringify({ linuxPasswordStore: "kwallet6" });
+      },
+    });
+
+    assert.deepEqual(readPaths, ["/home/user/.t3-alex/userdata/desktop-settings.json"]);
+    assert.equal(options.linuxDesktopEntryName, "com.t3tools.t3code.alex.desktop");
   });
 
   it("accepts JSONC in the early desktop settings file", () => {

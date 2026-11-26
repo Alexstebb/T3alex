@@ -53,6 +53,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(branded.baseDir, "/Users/alice/.t3-alex");
       assert.equal(branded.stateDir, "/Users/alice/.t3-alex/userdata");
       assert.isTrue(branded.skipProtocolRegistration);
+      assert.equal(branded.linuxDesktopEntryName, "com.t3tools.t3code.alex.desktop");
 
       const official = yield* makeEnvironment({ platform: "win32", isPackaged: true });
       assert.equal(official.displayName, "T3 Code (Beta)");

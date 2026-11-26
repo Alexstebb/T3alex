@@ -7,9 +7,15 @@
 
 export interface ForkBrand {
   readonly productName: string;
-  /** electron-builder appId and the Windows AppUserModelID; also names the installer's GUID. */
+  /**
+   * electron-builder appId and the Windows AppUserModelID; also names the installer's GUID and
+   * the Linux desktop entry, Wayland app id and WM_CLASS.
+   */
   readonly appId: string;
-  /** Staged package name; a per-user NSIS install goes to %LOCALAPPDATA%\Programs\<packageName>. */
+  /**
+   * Staged package name; a per-user NSIS install goes to %LOCALAPPDATA%\Programs\<packageName>.
+   * Also the Linux executable and .deb package name.
+   */
   readonly packageName: string;
   readonly artifactPrefix: string;
   /** Electron userData folder under the platform's app-data directory. */

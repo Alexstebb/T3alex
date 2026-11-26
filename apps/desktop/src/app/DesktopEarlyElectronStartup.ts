@@ -14,12 +14,14 @@ import {
   resolveDesktopStateDir,
   type JoinPath,
 } from "./DesktopStatePaths.ts";
+import { bakedForkBrand, type DesktopForkBrand } from "./DesktopForkBrand.ts";
 
 interface EarlyDesktopSettingsInput {
   readonly env: NodeJS.ProcessEnv;
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly readFileString: (path: string) => string;
+  readonly forkBrand?: DesktopForkBrand | undefined;
 }
 
 type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
@@ -30,8 +32,14 @@ export interface EarlyLinuxElectronOptions {
   readonly passwordStore: LinuxPasswordStoreSwitch | null;
 }
 
-export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
-  isDevelopment ? "com.t3tools.T3Code.Development.desktop" : "com.t3tools.T3Code.desktop";
+// A branded build names its own entry (and so its Wayland app id and WM_CLASS) after its appId.
+export const resolveLinuxDesktopEntryName = (
+  isDevelopment: boolean,
+  forkBrand: DesktopForkBrand | undefined = bakedForkBrand,
+): string =>
+  isDevelopment
+    ? "com.t3tools.T3Code.Development.desktop"
+    : `${forkBrand?.appId ?? "com.t3tools.T3Code"}.desktop`;
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
@@ -52,12 +60,15 @@ function resolveEarlyDesktopSettingsPath(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
+  readonly forkBrand?: DesktopForkBrand | undefined;
 }): string {
   const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
+  const forkBrand = input.forkBrand ?? bakedForkBrand;
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
     joinPath: input.joinPath,
     t3Home,
+    ...(forkBrand ? { defaultDirName: forkBrand.t3HomeDirName } : {}),
   });
   const stateDir = resolveDesktopStateDir({
     baseDir,
@@ -145,7 +156,7 @@ export function resolveEarlyLinuxElectronOptions(
   const isDevelopment = isDevelopmentEnvironment(input.env);
   return {
     isDevelopment,
-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
+    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment, input.forkBrand),
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
       env: input.env,

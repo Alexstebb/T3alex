@@ -581,6 +581,41 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect("keeps a fork-branded Linux package apart from the official one", () =>
+    Effect.gen(function* () {
+      const linux = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+
+      assert.nestedPropertyVal(linux, "linux.executableName", "t3code-alex");
+      assert.nestedPropertyVal(
+        linux,
+        "linux.desktop.entry.StartupWMClass",
+        "com.t3tools.t3code.alex",
+      );
+      assert.notNestedProperty(linux, "linux.protocols");
+      const fpm = (linux.deb as { fpm: string[] }).fpm;
+      assert.isFalse(fpm.some((mapping) => mapping.includes("metainfo")));
+      assert.isTrue(
+        fpm.some((mapping) => mapping.endsWith("=/usr/share/doc/t3code-alex/copyright")),
+      );
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: { GITHUB_REPOSITORY: "pingdotgg/t3code", T3CODE_FORK_BRAND: "alex" },
+          }),
+        ),
+      ),
+    ),
+  );
+
   it.effect("names the Electron window class in the Linux desktop entry", () =>
     Effect.gen(function* () {
       const linux = yield* createBuildConfig(

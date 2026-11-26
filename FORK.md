@@ -24,7 +24,7 @@ At the time of writing the base is upstream `147384f61a` (2026-11-24).
 | Completed one-time tasks kept          | A one-time task is disabled after its run instead of deleted; Completed drops it 30 days later.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `apps/server/src/scheduledTasks/ScheduledTaskService.ts`, `apps/web/src/components/scheduled/scheduledTaskOrganization.ts`                                                                                                                                                                                                                                                                                           |
 | Custom sidebar sections                | User-made sidebar sections with drag and drop, stored in client settings (`client-settings.json` in the T3 home) rather than browser storage. Section fields: `threadKeys` (chats placed there by hand), `projectKey` (linked project: pulls in its threads, one section per project, `excludedThreadKeys` keeps out ones moved away) and `chatProjectKey` (the project new chats from "+" start in, shared freely, pulls in nothing; a linked `projectKey` wins). A section whose project was deleted or archived shows a warning and "+" opens its folder dialog.                                                                                                                              | `apps/web/src/components/sidebar/sidebarSections.ts`, `SidebarCustomSection.tsx`, `SidebarCustomSectionsBlock.tsx` (call sites in `Sidebar.tsx`), the "Sections" palette group in `apps/web/src/components/commandPaletteForkItems.tsx`, `packages/contracts/src/settings.ts`                                                                                                                                        |
 | Own Electron profile, protocol opt-out | `T3CODE_DESKTOP_USER_DATA_DIR` sets the Electron userData folder; `T3CODE_DESKTOP_SKIP_PROTOCOL_REGISTRATION=1` stops the app registering `t3code://`. Without them nothing changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `apps/desktop/src/app/DesktopConfig.ts`, `DesktopUserData.ts`, `DesktopClerk.ts`                                                                                                                                                                                                                                                                                                                                     |
-| Branded build "T3 Code Alex"           | Build-time switch `T3CODE_FORK_BRAND=alex` (see below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `scripts/lib/fork-brand.ts`, `apps/desktop/src/app/DesktopForkBrand.ts`, `DesktopEnvironment.ts`, `DesktopStatePaths.ts`, `DesktopUserData.ts`, `apps/desktop/src/updates/DesktopUpdates.ts`, `apps/desktop/vite.config.ts`, `scripts/build-desktop-artifact.ts`                                                                                                                                                     |
+| Branded build "T3 Code Alex"           | Build-time switch `T3CODE_FORK_BRAND=alex` (see below), for Windows and Linux.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `scripts/lib/fork-brand.ts`, `apps/desktop/src/app/DesktopForkBrand.ts`, `DesktopEnvironment.ts`, `DesktopStatePaths.ts`, `DesktopUserData.ts`, `DesktopEarlyElectronStartup.ts`, `DesktopLinuxUrlHandler.ts`, `DesktopPreReadyPlatform.ts`, `apps/desktop/src/updates/DesktopUpdates.ts`, `apps/desktop/vite.config.ts`, `scripts/build-desktop-artifact.ts`                                                        |
 
 How a run's chat finds its task: `scheduledTasks.subscribeRuns` also takes a `threadId` and answers with the task of the latest
 scheduled message in that thread, so the runs panel and the sidebar highlight work however the chat was opened. In a thread
@@ -54,6 +54,10 @@ User-facing docs for the sidebar features are in `docs/user/thread-sidebar.md` a
   "Automatic updates are turned off in this build." before any feed or managed-policy check.
 - **No `t3code://` registration**, so the official app keeps the scheme. As a result, sign-in flows that return
   through `t3code://` (T3 Connect / Clerk account sign-in) do not come back to this app.
+- On Linux: executable and .deb package `t3code-alex` (installs to `/opt/T3 Code Alex`, links
+  `/usr/bin/t3code-alex`), desktop entry and window class `com.t3tools.t3code.alex`, no AppStream metainfo,
+  and the launch-time entry in `~/.local/share/applications` claims no URL scheme. Electron userData is
+  `~/.config/t3code-alex`, T3 home `~/.t3-alex`.
 
 The brand is baked into the desktop bundle at pack time, so the installed app needs no environment variables.
 A build without `T3CODE_FORK_BRAND` behaves exactly as before. To add another brand, add an entry
@@ -99,6 +103,33 @@ Does not work in a branded build:
 - `t3code://` callbacks, i.e. account sign-in that returns to the app through the browser.
 - The process resource monitor (CPU/memory per process) when built with `T3CODE_DESKTOP_SKIP_RESOURCE_MONITOR`;
   the app runs without those metrics.
+
+## Build and run (Linux)
+
+> **Not yet run end to end.** The tests cover the packaging config and the runtime names, but no branded
+> AppImage or .deb has been built and installed yet.
+
+Build on a Linux machine of the same architecture; the browser secret helper links against libsecret and cannot
+be cross-built from Windows or macOS. Prerequisites are upstream's: see
+[Linux AppImage prerequisites](docs/operations/00_development.md#linux-appimage-prerequisites) (Rust/Cargo, a C
+toolchain, libsecret headers, ImageMagick), plus Git and Vite+ (`curl -fsSL https://vite.plus | bash`).
+
+```sh
+git clone https://github.com/Alexstebb/T3code-alex.git ~/src/t3code-alex
+cd ~/src/t3code-alex
+vp i
+T3CODE_FORK_BRAND=alex vp run dist:desktop:linux
+```
+
+`release/` then holds `T3-Code-Alex-<version>-x86_64.AppImage` and `T3-Code-Alex-<version>-amd64.deb`.
+
+- **.deb** (Debian, Ubuntu): `sudo apt install ./release/T3-Code-Alex-<version>-amd64.deb`; it appears as
+  "T3 Code Alex" in the app menu and installs beside the official `t3code` package. Uninstall with
+  `sudo apt remove t3code-alex`.
+- **AppImage** (any distribution): `chmod +x` it and run it. The first launch writes its own desktop entry
+  and icon under `~/.local/share`.
+
+The same limits as on Windows apply: no automatic updates and no `t3code://` sign-in callbacks.
 
 ## Getting upstream updates
 
