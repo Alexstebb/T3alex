@@ -37,6 +37,7 @@ import {
   PRIMARY_PASTE_DISABLED_ARGUMENT,
 } from "../preview/GuestProtocol.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import { resolveSpellCheckerLanguages } from "./spellCheckerLanguages.ts";
 import * as PreviewPasskeys from "../preview/Passkeys.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
@@ -511,6 +512,18 @@ export const make = Effect.gen(function* () {
     yield* rendererHistory.register(window.webContents, { surface: "main" });
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
+    } else {
+      // macOS picks spelling languages itself; elsewhere Chromium only checks the app locale (en-US).
+      const spellSession = window.webContents.session;
+      const languages = resolveSpellCheckerLanguages(
+        Electron.app.getPreferredSystemLanguages(),
+        spellSession.availableSpellCheckerLanguages,
+      );
+      if (languages.length > 0) {
+        yield* Effect.try(() => spellSession.setSpellCheckerLanguages([...languages])).pipe(
+          Effect.ignore,
+        );
+      }
     }
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
