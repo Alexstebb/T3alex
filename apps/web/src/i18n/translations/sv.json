@@ -12885,5 +12885,6 @@
   "57b7688c78b33028": "{count} misslyckades",
   "6b87a6cb8bc4b636": "{count, plural, one {{count} oläst svar} other {{count} olästa svar}}",
   "f1851f105be1e49f": "{count} arbetar",
-  "b78a7929feb88b2c": "Markera alla som lästa"
+  "b78a7929feb88b2c": "Markera alla som lästa",
+  "289a85f0acfc4c47": "Återuppta alla vid återställning"
 }

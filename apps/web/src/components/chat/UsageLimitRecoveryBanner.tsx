@@ -45,7 +45,7 @@ function parseEpochMs(isoDate: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function limitRecoveryScheduleState(
+export function limitRecoveryScheduleState(
   props: Pick<
     RecoveryProps,
     "runId" | "resetAt" | "stoppedAt" | "settled" | "requestPending" | "recovery" | "snoozedUntil"

@@ -6,12 +6,15 @@ import {
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
   MailCheckIcon,
+  TimerResetIcon,
   UserRoundIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
 
 import { cn } from "~/lib/utils";
+import { useDeadlinePassed } from "../../hooks/useDeadline";
+import { InlineButton } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -27,6 +30,8 @@ export interface SectionLampEntry {
   readonly tone: SectionLampTone;
   readonly title: string;
   readonly onOpen: () => void;
+  /** A chat stopped on a usage limit that can resume at its reset, as the chat banner offers. */
+  readonly resume?: { readonly resetAt: string; readonly run: () => Promise<void> } | undefined;
 }
 
 // The icon and colour each state has on its thread row (`TOP_STATUS_ICONS` and `topStatus` in
@@ -130,6 +135,24 @@ function lampClassName(lamp: SectionLamp) {
   );
 }
 
+function LampResumeButton(props: { resetAt: string; pending: boolean; onClick: () => void }) {
+  const gt = useGT();
+  const resetPassed = useDeadlinePassed(Date.parse(props.resetAt));
+  return (
+    <span className="shrink-0 pr-2 text-xs">
+      <InlineButton
+        tone="muted"
+        touchTarget="padded"
+        data-section-lamp-resume=""
+        disabled={props.pending}
+        onClick={props.onClick}
+      >
+        {props.pending ? gt("Saving...") : resetPassed ? gt("Resume now") : gt("Resume at reset")}
+      </InlineButton>
+    </span>
+  );
+}
+
 /**
  * A closed section's status light: the most urgent state among its hidden chats, filled
  * and haloed so it stands out, with a count once more than one chat needs the user.
@@ -140,10 +163,20 @@ export function SidebarSectionLamp(props: {
   lamp: SectionLamp;
   entries?: readonly SectionLampEntry[] | undefined;
   onMarkAllRead?: (() => void) | undefined;
+  onResumeAll?: (() => Promise<void>) | undefined;
 }) {
   const gt = useGT();
   const { lamp } = props;
   const [open, setOpen] = useState(false);
+  const [resuming, setResuming] = useState<ReadonlySet<string>>(() => new Set());
+  const runResume = async (keys: readonly string[], run: () => Promise<void>) => {
+    setResuming((current) => new Set([...current, ...keys]));
+    try {
+      await run();
+    } finally {
+      setResuming((current) => new Set([...current].filter((key) => !keys.includes(key))));
+    }
+  };
   const [heading = "", ...details] = lampLines(gt, lamp);
   const label = [heading, ...details].join(", ");
   if (props.entries === undefined) {
@@ -174,6 +207,9 @@ export function SidebarSectionLamp(props: {
   }
   const rank = (tone: SectionLampTone) => SECTION_LAMP_TONES.indexOf(tone);
   const entries = props.entries.toSorted((a, b) => rank(a.tone) - rank(b.tone));
+  const resumable = entries.filter((entry) => entry.resume !== undefined);
+  const { onResumeAll } = props;
+  const canResumeAll = onResumeAll !== undefined && resumable.length > 1;
   const canMarkRead =
     props.onMarkAllRead !== undefined && entries.some((entry) => isReadClearableTone(entry.tone));
   return (
@@ -199,8 +235,9 @@ export function SidebarSectionLamp(props: {
           <p className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">{heading}</p>
           <ul className="flex max-h-72 flex-col overflow-y-auto">
             {entries.map((entry) => {
+              const { resume } = entry;
               return (
-                <li key={entry.key}>
+                <li key={entry.key} className="flex min-w-0 items-center gap-1">
                   <button
                     type="button"
                     data-section-lamp-entry={entry.tone}
@@ -208,28 +245,54 @@ export function SidebarSectionLamp(props: {
                       setOpen(false);
                       entry.onOpen();
                     }}
-                    className="flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+                    className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
                   >
                     <SectionLampToneIcon tone={entry.tone} />
                     <span className="min-w-0 flex-1 truncate">{entry.title}</span>
                   </button>
+                  {resume ? (
+                    <LampResumeButton
+                      resetAt={resume.resetAt}
+                      pending={resuming.has(entry.key)}
+                      onClick={() => void runResume([entry.key], resume.run)}
+                    />
+                  ) : null}
                 </li>
               );
             })}
           </ul>
-          {canMarkRead ? (
-            <div className="border-t border-border pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  props.onMarkAllRead?.();
-                }}
-                className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
-              >
-                <MailCheckIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-                {gt("Mark all as read")}
-              </button>
+          {canResumeAll || canMarkRead ? (
+            <div className="flex flex-col border-t border-border pt-1">
+              {canResumeAll && onResumeAll ? (
+                <button
+                  type="button"
+                  data-section-lamp-resume-all=""
+                  disabled={resumable.every((entry) => resuming.has(entry.key))}
+                  onClick={() =>
+                    void runResume(
+                      resumable.map((entry) => entry.key),
+                      onResumeAll,
+                    )
+                  }
+                  className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent disabled:cursor-default disabled:opacity-60"
+                >
+                  <TimerResetIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                  {gt("Resume all at reset")}
+                </button>
+              ) : null}
+              {canMarkRead ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    props.onMarkAllRead?.();
+                  }}
+                  className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+                >
+                  <MailCheckIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                  {gt("Mark all as read")}
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

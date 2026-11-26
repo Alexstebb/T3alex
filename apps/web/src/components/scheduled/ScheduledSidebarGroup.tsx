@@ -88,6 +88,7 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
               lamp={headerLamp.lamp}
               entries={headerLamp.entries}
               onMarkAllRead={headerLamp.onMarkAllRead}
+              onResumeAll={headerLamp.onResumeAll}
             />
           </span>
         ) : null}

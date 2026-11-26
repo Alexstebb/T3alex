@@ -173,8 +173,10 @@ chats needs you: the light takes the icon and color of the most urgent one (a qu
 approval, a failure, or an unread reply) and shows a number when more than one is waiting. A
 section whose chats are only working shows the working icon instead. Click the light to list
 those chats, most urgent first, and open one; **Mark all as read** there, or in the section's
-menu, clears unread replies and failures but leaves questions and approvals waiting. Use the
-section's menu to rename, reorder, or remove it.
+menu, clears unread replies and failures but leaves questions and approvals waiting. A chat
+stopped on a usage limit has **Resume at reset** beside it (or **Resume now** once the limit has
+reset), and **Resume all at reset** covers every such chat in the list. A chat set to resume
+no longer lights the section. Use the section's menu to rename, reorder, or remove it.
 
 An open section lists chats that need you first (after pinned chats), then the rest in their
 usual order. It shows ten chats; **Show more** reveals the rest and **Show less** folds them

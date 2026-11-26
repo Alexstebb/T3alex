@@ -13,6 +13,8 @@ import { resolveSidebarFolderDot } from "../Sidebar.logic";
 import {
   resolveSectionLamp,
   resolveSidebarSectionLamp,
+  resumableLimitedThreads,
+  resumeAtResetTarget,
   sectionLampToneOfThread,
 } from "./sidebarSectionLamp.logic";
 import {
@@ -248,5 +250,70 @@ describe("collapsed sections of every kind", () => {
     expect(lampsOf([section], [open, thread("other", "working")], keyOf(open))).toEqual({
       Codex: "working",
     });
+  });
+});
+
+describe("resume at reset", () => {
+  const RESET_AT = "2026-11-26T15:00:00.000Z";
+  const limitedThread = (id: string, overrides: Partial<Thread> = {}) =>
+    makeThreadFixture({
+      environmentId,
+      id: ThreadId.make(id),
+      projectId,
+      title: id,
+      ...states.limited,
+      runtime: { ...states.limited.runtime, usageLimitResetAt: RESET_AT },
+      ...overrides,
+    });
+  const scheduled = {
+    limitRecovery: { runId: RunId.make("run-1"), resetAt: RESET_AT, autoResume: true },
+  };
+
+  it("offers the action for a limited chat with a known reset time", () => {
+    expect(resumeAtResetTarget(limitedThread("a"))).toEqual({
+      runId: RunId.make("run-1"),
+      resetAt: RESET_AT,
+    });
+  });
+
+  it("offers nothing when the reset time is unknown, the chat is settled, a request waits, or it is not limited", () => {
+    expect(resumeAtResetTarget(thread("b", "limited"))).toBeNull();
+    expect(resumeAtResetTarget(limitedThread("c", { settledOverride: "settled" }))).toBeNull();
+    expect(resumeAtResetTarget(limitedThread("d", { hasPendingApprovals: true }))).toBeNull();
+    expect(resumeAtResetTarget(thread("e", "failed"))).toBeNull();
+    expect(
+      resumeAtResetTarget(
+        limitedThread("f", {
+          runtime: { ...states.limited.runtime, usageLimitResetAt: BEFORE },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("drops a chat with auto-resume on from the lamp and from the action", () => {
+    const resuming = limitedThread("g", scheduled);
+    expect(resumeAtResetTarget(resuming)).toBeNull();
+    expect(sectionLampToneOfThread(resuming)).toBeNull();
+    expect(resolveSidebarSectionLamp([resuming, thread("h", "done")])).toEqual({
+      tone: "done",
+      waiting: 1,
+      counts: { done: 1 },
+    });
+    // Auto-resume for an older run or reset does not count.
+    const stale = limitedThread("i", {
+      limitRecovery: { ...scheduled.limitRecovery, resetAt: BEFORE },
+    });
+    expect(sectionLampToneOfThread(stale)).toBe("limited");
+  });
+
+  it("bulk action picks only limited chats it can schedule", () => {
+    const threads = [
+      limitedThread("a"),
+      limitedThread("b", scheduled),
+      thread("c", "limited"),
+      thread("d", "failed"),
+      limitedThread("e"),
+    ];
+    expect(resumableLimitedThreads(threads).map((item) => item.title)).toEqual(["a", "e"]);
   });
 });

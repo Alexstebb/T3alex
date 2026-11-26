@@ -1,3 +1,7 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { RunId } from "@t3tools/contracts";
+
+import { limitRecoveryScheduleState } from "../chat/UsageLimitRecoveryBanner";
 import {
   hasUnseenCompletion,
   resolveSidebarRowStatus,
@@ -29,7 +33,50 @@ export interface SectionLamp {
   readonly counts: SectionLampCounts;
 }
 
-type SectionLampThread = Parameters<typeof resolveSidebarRowStatus>[0];
+type LimitRecoveryThread = Pick<
+  EnvironmentThreadShell,
+  | "runtime"
+  | "latestRun"
+  | "updatedAt"
+  | "settledOverride"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "snoozedUntil"
+> &
+  Partial<Pick<EnvironmentThreadShell, "limitRecovery">>;
+
+type SectionLampThread = Parameters<typeof resolveSidebarRowStatus>[0] &
+  Partial<LimitRecoveryThread>;
+
+/** What the chat's usage-limit banner sees for a thread stopped on a usage limit, or null. */
+function threadLimitRecovery(thread: Partial<LimitRecoveryThread>): {
+  readonly runId: RunId;
+  readonly resetAt: string;
+  readonly resumes: boolean;
+} | null {
+  const { runtime, latestRun } = thread;
+  if (runtime?.status !== "failed" || runtime.lastErrorClass !== "usage_limit") return null;
+  const resetAt = runtime.usageLimitResetAt ?? null;
+  if (latestRun == null || resetAt === null) return null;
+  const { canSchedule, resumes } = limitRecoveryScheduleState({
+    runId: latestRun.runId,
+    resetAt,
+    stoppedAt: latestRun.completedAt ?? thread.updatedAt ?? resetAt,
+    settled: thread.settledOverride === "settled",
+    requestPending: thread.hasPendingApprovals === true || thread.hasPendingUserInput === true,
+    recovery: thread.limitRecovery ?? null,
+    snoozedUntil: thread.snoozedUntil ?? null,
+  });
+  return canSchedule ? { runId: latestRun.runId, resetAt, resumes } : null;
+}
+
+/** The banner's "Resume at reset" for this thread, when it is offered and not already on. */
+export function resumeAtResetTarget(thread: Partial<LimitRecoveryThread>) {
+  const recovery = threadLimitRecovery(thread);
+  return recovery === null || recovery.resumes
+    ? null
+    : { runId: recovery.runId, resetAt: recovery.resetAt };
+}
 
 /** The lamp state one thread contributes: the state its own sidebar row shows, or null. */
 export function sectionLampToneOfThread(thread: SectionLampThread): SectionLampTone | null {
@@ -38,9 +85,11 @@ export function sectionLampToneOfThread(thread: SectionLampThread): SectionLampT
     case "approval":
     case "input":
     case "request":
-    case "limited":
     case "failed":
       return status;
+    // Auto-resume is on: the chat will carry on by itself, so it no longer needs the user.
+    case "limited":
+      return threadLimitRecovery(thread)?.resumes === true ? null : status;
     case "preparing":
     case "working":
       return "working";
@@ -89,6 +138,16 @@ export function resolveSidebarSectionLamp<T extends SectionLampThread>(
 ): SectionLamp | null {
   if (threads.length === 0) return null;
   return resolveSectionLamp(countSectionLampTones(threads.map(toneOf)));
+}
+
+/** The lamp's usage-limited chats that "Resume all at reset" would schedule. */
+export function resumableLimitedThreads<T extends SectionLampThread>(
+  threads: readonly T[],
+  toneOf: (thread: T) => SectionLampTone | null = sectionLampToneOfThread,
+): T[] {
+  return threads.filter(
+    (thread) => toneOf(thread) === "limited" && resumeAtResetTarget(thread) !== null,
+  );
 }
 
 /** Tones "Mark all as read" clears: an unread result or an unseen failure, never a question. */

@@ -12878,5 +12878,6 @@
   "57b7688c78b33028": "{count} fehlgeschlagen",
   "6b87a6cb8bc4b636": "{count, plural, one {{count} ungelesene Antwort} other {{count} ungelesene Antworten}}",
   "f1851f105be1e49f": "{count} in Arbeit",
-  "b78a7929feb88b2c": "Alle als gelesen markieren"
+  "b78a7929feb88b2c": "Alle als gelesen markieren",
+  "289a85f0acfc4c47": "Alle bei Zurücksetzung fortsetzen"
 }

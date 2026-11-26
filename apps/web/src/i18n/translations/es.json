@@ -12873,5 +12873,6 @@
   "57b7688c78b33028": "{count} con error",
   "6b87a6cb8bc4b636": "{count, plural, one {{count} respuesta sin leer} other {{count} respuestas sin leer}}",
   "f1851f105be1e49f": "{count} en curso",
-  "b78a7929feb88b2c": "Marcar todo como leído"
+  "b78a7929feb88b2c": "Marcar todo como leído",
+  "289a85f0acfc4c47": "Reanudar todos al restablecerse"
 }

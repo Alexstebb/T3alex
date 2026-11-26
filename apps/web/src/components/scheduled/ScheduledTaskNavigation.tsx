@@ -45,10 +45,13 @@ import {
   countSectionLampTones,
   isReadClearableTone,
   resolveSectionLamp,
+  resumableLimitedThreads,
+  resumeAtResetTarget,
   type SectionLamp,
   type SectionLampTone,
 } from "../sidebar/sidebarSectionLamp.logic";
 import { useMarkThreadsRead } from "../sidebar/useMarkThreadsRead";
+import { useResumeAtReset } from "../sidebar/useResumeAtReset";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useScheduledChatStates } from "./scheduledChatStates";
@@ -156,6 +159,7 @@ export function useScheduledHeaderLamp(
   const nowMinute = useNowMinute();
   const chatStates = useScheduledChatStates(rows);
   const markThreadsRead = useMarkThreadsRead();
+  const resumeAtReset = useResumeAtReset();
   if (!enabled) return null;
   const chatToneOf = (key: string) => chatStates.get(key)?.tone ?? null;
   const lamp = scheduledSidebarLamp(rows, organization, Date.parse(nowMinute), chatToneOf);
@@ -165,12 +169,25 @@ export function useScheduledHeaderLamp(
     const tone = scheduledTaskLampTone(organization, key, row.task, chatToneOf(key));
     return tone === null ? [] : [{ key, row, tone }];
   });
+  const resumableThreads = resumableLimitedThreads(
+    toned.flatMap(({ key, tone }) => {
+      const thread = chatStates.get(key)?.thread;
+      return tone === "limited" && thread != null ? [thread] : [];
+    }),
+  );
   const entries: SectionLampEntry[] = toned.map(({ key, row, tone }) => {
     const chat = chatStates.get(key);
+    const thread = chat?.thread;
+    const resume =
+      thread != null && resumableThreads.includes(thread) ? resumeAtResetTarget(thread) : null;
     return {
       key,
       tone,
       title: row.task.title,
+      resume:
+        thread == null || resume === null
+          ? undefined
+          : { resetAt: resume.resetAt, run: () => resumeAtReset([thread]) },
       onOpen: () => {
         if (chat?.thread != null && chat.tone === tone) {
           void router.navigate({
@@ -196,6 +213,7 @@ export function useScheduledHeaderLamp(
   return {
     lamp,
     entries,
+    onResumeAll: resumableThreads.length > 1 ? () => resumeAtReset(resumableThreads) : undefined,
     onMarkAllRead:
       unread.length === 0 || !toned.some(({ tone }) => isReadClearableTone(tone))
         ? undefined

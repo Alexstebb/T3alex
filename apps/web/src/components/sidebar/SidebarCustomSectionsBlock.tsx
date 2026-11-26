@@ -68,8 +68,13 @@ import {
   type SidebarSectionIndex,
 } from "./sidebarSections";
 import { SECTION_ROW_PAGE_COUNT } from "./sidebarSectionArrangement.logic";
-import { isReadClearableTone } from "./sidebarSectionLamp.logic";
+import {
+  isReadClearableTone,
+  resumableLimitedThreads,
+  resumeAtResetTarget,
+} from "./sidebarSectionLamp.logic";
 import { useMarkThreadsRead } from "./useMarkThreadsRead";
+import { useResumeAtReset } from "./useResumeAtReset";
 
 type SectionMenuAction = `section:${string}`;
 type SidebarDraftBlockProps = ComponentProps<typeof SidebarDraftBlock>;
@@ -116,6 +121,7 @@ export function useSidebarCustomSections(input: {
   const startChatInSection = useStartSidebarSectionChat(newThreadContext.handleNewThread);
   const navigate = useNavigate();
   const markThreadsRead = useMarkThreadsRead();
+  const resumeAtReset = useResumeAtReset();
   const { toneOf } = sectionIndex.display;
   useSidebarSectionThreads(sections, input.connectedEnvironmentIds);
   const draftSectionIds = useComposerDraftStore(
@@ -294,6 +300,7 @@ export function useSidebarCustomSections(input: {
         const unread = [...group.threads, ...group.hiddenThreads].filter((thread) =>
           isReadClearableTone(toneOf(thread)),
         );
+        const resumable = resumableLimitedThreads(group.hiddenThreads, toneOf);
         rows.push(
           <SidebarCustomSectionHeader
             key={section.id}
@@ -302,6 +309,7 @@ export function useSidebarCustomSections(input: {
             lamp={group.lamp}
             lampEntries={group.hiddenThreads.flatMap((thread) => {
               const tone = toneOf(thread);
+              const resume = resumable.includes(thread) ? resumeAtResetTarget(thread) : null;
               return tone === null
                 ? []
                 : [
@@ -309,6 +317,10 @@ export function useSidebarCustomSections(input: {
                       key: threadShellKey(thread),
                       tone,
                       title: thread.title,
+                      resume:
+                        resume === null
+                          ? undefined
+                          : { resetAt: resume.resetAt, run: () => resumeAtReset([thread]) },
                       onOpen: () => {
                         if (isMobile) setOpenMobile(false);
                         void navigate({
@@ -322,6 +334,7 @@ export function useSidebarCustomSections(input: {
                   ];
             })}
             onMarkAllRead={unread.length > 0 ? () => markThreadsRead(unread) : undefined}
+            onResumeAll={resumable.length > 1 ? () => resumeAtReset(resumable) : undefined}
             folderName={target?.available ? target.project?.title : undefined}
             // Projects of an environment that is not connected yet are unknown, not missing.
             folderMissing={

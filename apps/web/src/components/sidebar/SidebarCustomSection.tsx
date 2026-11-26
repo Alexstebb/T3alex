@@ -31,6 +31,7 @@ export function SidebarCustomSectionHeader(props: {
   lampEntries: readonly SectionLampEntry[];
   /** Marks the section's finished and failed chats read; undefined when none are unread. */
   onMarkAllRead: (() => void) | undefined;
+  onResumeAll: (() => Promise<void>) | undefined;
   /** The project new chats start in, when there is one and it still exists. */
   folderName: string | undefined;
   folderMissing: boolean;
@@ -104,6 +105,7 @@ export function SidebarCustomSectionHeader(props: {
           lamp={props.lamp}
           entries={props.lampEntries}
           onMarkAllRead={props.onMarkAllRead}
+          onResumeAll={props.onResumeAll}
         />
       ) : null}
       <Tooltip>
