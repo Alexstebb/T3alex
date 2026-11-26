@@ -36,6 +36,8 @@ SMOKE_FILES = ("settings.json", "client-settings.json", "desktop-settings.json",
                "keybindings-migrations", "environment-id", "anonymous-id", "desktop-host-scope")
 SMOKE_DIRS = ("attachments", "themes")
 PROBE = TOOLS / "cdp_probe.mjs"
+NO_DISPLAY = ("no display to start the app on (run outside the desktop session, e.g. by cron); "
+              "install Xvfb once: sudo apt install xvfb")
 
 
 def _inside(path, parent):
@@ -158,6 +160,10 @@ def run_smoke(config, build, workdir, log_path, text_path=None, probe_args=None,
             extra["DISPLAY"] = xvfb[1]
             extra_args.append("--ozone-platform=x11")
         result["display"] = xvfb[1] if xvfb else "the desktop (Xvfb not installed)"
+        if not xvfb and not t3platform.has_display(os.environ):
+            result["problems"] = [NO_DISPLAY]
+            result["passed"] = False
+            return result
     port = free_port()
     aumid = f"{config.app_user_model_id}.smoke" if config.app_user_model_id else None
     env = t3launch.app_environment(config, build, meta, home, user_data, port=None, app_user_model_id=aumid,

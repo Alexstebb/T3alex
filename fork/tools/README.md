@@ -94,4 +94,5 @@ its folder. Write Windows paths with forward slashes or doubled backslashes; it 
   folder and prints the two `sudo` commands to install it once. Until then the builds start with
   `--no-sandbox`; `status` shows which.
 - With `Xvfb` installed (`sudo apt install xvfb`) the smoke test runs on an invisible display, also
-  when nobody is logged in. Without it the smoke window opens on the desktop for about a minute.
+  when nobody is logged in. Without it the smoke window opens on the desktop for about a minute, and
+  an update run outside the desktop session (cron, a timer) fails its smoke test for lack of a display.

@@ -300,6 +300,10 @@ def apparmor_profile_text(builds_dir):
 
 # ---------------------------------------------------------------- Linux: Xvfb for invisible smoke runs
 
+def has_display(env):
+    return bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
+
+
 def start_xvfb():
     """Start a private X server; (process, DISPLAY) or None when Xvfb is not installed."""
     if IS_WINDOWS:

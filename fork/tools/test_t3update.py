@@ -381,6 +381,23 @@ class SmokeVerdict(unittest.TestCase):
             with self.subTest(change=change, log=log_text):
                 self.assertNotEqual(t3smoke.evaluate({**self.good, **change}, log_text), [])
 
+    @unittest.skipIf(sys.platform == "win32", "Linux display handling")
+    def test_without_xvfb_or_a_display_it_fails_early_and_says_why(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            config = t3core.resolve_config(t3core.default_config("linux", {}, tmp), tmp / "r" / "t3update.json",
+                                           "linux")
+            (tmp / "w" / "home" / "userdata").mkdir(parents=True)
+            (tmp / "w" / "home" / "userdata" / "statev2.sqlite").write_bytes(b"")
+            with mock.patch.object(t3launch, "check_build"), \
+                    mock.patch.object(t3platform, "start_xvfb", return_value=None), \
+                    mock.patch.dict(os.environ, {}, clear=True), \
+                    mock.patch.object(t3smoke.subprocess, "Popen") as popen:
+                result = t3smoke.run_smoke(config, tmp / "b", tmp / "w", tmp / "smoke.log")
+        self.assertFalse(popen.called)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["problems"], [t3smoke.NO_DISPLAY])
+
     def test_refuses_to_smoke_inside_the_live_profile(self):
         config = t3core.resolve_config(t3core.default_config("linux", {}, "/h"), "/h/r/t3update.json", "linux")
         with self.assertRaises(SystemExit):

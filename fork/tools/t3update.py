@@ -682,7 +682,8 @@ def cmd_setup(config, args):
     if not shutil.which("Xvfb"):
         log("")
         log("Recommended, once (sudo): `sudo apt install xvfb`, so the update's smoke test runs on an invisible")
-        log("display instead of opening a window on your desktop (and works when nobody is logged in).")
+        log("display instead of opening a window on your desktop. Updates run outside the desktop session")
+        log("(cron, a timer, `env -i`) need it: without a display their smoke test fails.")
     if Path("/opt/T3 Code Alex").exists() or shutil.which("t3code-alex"):
         log("")
         log("The old .deb install is still there. Once the new launcher works, remove it with:")
