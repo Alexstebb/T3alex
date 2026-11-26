@@ -3,6 +3,7 @@ import {
   type ScheduledTaskId,
   type ScheduledTaskRunsInput,
   type ScheduledTaskRunsResult,
+  type ScheduledTaskRunThreadsResult,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -113,5 +114,63 @@ export const makeScheduledTaskRuns = Effect.fn("ScheduledTaskService.makeRuns")(
       }),
     );
 
-  return { listRuns, subscribeRuns };
+  // A chat counts as a run's chat when its first user message came from a task; a chat the
+  // user started and a task later continues in stays theirs.
+  const listRunThreads = Effect.fn("ScheduledTaskService.listRunThreads")(
+    function* () {
+      yield* ensureRunLookupIndex;
+      const threads = yield* sql<ScheduledTaskRunThreadsResult["threads"][number]>`
+          SELECT
+            scheduled.thread_id AS "threadId",
+            json_extract(scheduled.payload_json, '$.scheduledTaskId') AS "taskId"
+          FROM orchestration_v2_projection_messages AS scheduled
+          INNER JOIN orchestration_v2_projection_threads AS thread
+            ON thread.thread_id = scheduled.thread_id AND thread.deleted_at IS NULL
+          WHERE CASE WHEN json_valid(scheduled.payload_json)
+              THEN json_type(scheduled.payload_json, '$.scheduledTaskId') END IS NOT NULL
+            AND scheduled.role = 'user'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM orchestration_v2_projection_messages AS earlier
+              WHERE earlier.thread_id = scheduled.thread_id
+                AND earlier.role = 'user'
+                AND (
+                  earlier.created_at < scheduled.created_at
+                  OR (
+                    earlier.created_at = scheduled.created_at
+                    AND earlier.message_id < scheduled.message_id
+                  )
+                )
+            )
+          ORDER BY scheduled.thread_id
+        `.pipe(NodeSqliteClient.readOnly);
+      return { threads } satisfies ScheduledTaskRunThreadsResult;
+    },
+    (effect) =>
+      effect.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ScheduledTaskError({ message: "Could not list scheduled run chats.", cause }),
+        ),
+      ),
+  );
+
+  const subscribeRunThreads = (): Stream.Stream<
+    ScheduledTaskRunThreadsResult,
+    ScheduledTaskError
+  > =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const subscription = yield* PubSub.subscribe(changes);
+        return Stream.concat(
+          Stream.fromEffect(listRunThreads()),
+          Stream.fromSubscription(subscription).pipe(Stream.mapEffect(() => listRunThreads())),
+        ).pipe(
+          // Most task changes start no chat; resend only when the list changed.
+          Stream.changesWith((a, b) => JSON.stringify(a.threads) === JSON.stringify(b.threads)),
+        );
+      }),
+    );
+
+  return { listRuns, subscribeRuns, subscribeRunThreads };
 });

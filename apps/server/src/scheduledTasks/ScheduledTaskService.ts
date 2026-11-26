@@ -19,6 +19,7 @@ import {
   type ScheduledTaskWebhookFilter,
   type ScheduledTaskListResult,
   type ScheduledTaskRunsInput,
+  type ScheduledTaskRunThreadsResult,
   type ScheduledTaskRunsResult,
   type ScheduledTaskMutationResult,
   type ScheduledTaskRunNowInput,
@@ -281,6 +282,10 @@ export class ScheduledTaskService extends Context.Service<
     readonly subscribeRuns: (
       input: ScheduledTaskRunsInput,
     ) => Stream.Stream<ScheduledTaskRunsResult, ScheduledTaskError>;
+    readonly subscribeRunThreads: () => Stream.Stream<
+      ScheduledTaskRunThreadsResult,
+      ScheduledTaskError
+    >;
     readonly upsert: (
       input: ScheduledTaskUpsertInput,
     ) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
@@ -1448,7 +1453,8 @@ export const layer = Layer.effect(
       );
 
     // Local fork: a task's run history (ScheduledTaskRuns.ts).
-    const { listRuns, subscribeRuns } = yield* makeScheduledTaskRuns(changesPubSub);
+    const { listRuns, subscribeRuns, subscribeRunThreads } =
+      yield* makeScheduledTaskRuns(changesPubSub);
 
     const requireDestinationThread = Effect.fn("ScheduledTaskService.requireDestinationThread")(
       function* (threadId: ThreadId, projectId: ProjectId, taskId: ScheduledTaskId) {
@@ -2712,6 +2718,7 @@ export const layer = Layer.effect(
       subscribeList,
       listRuns,
       subscribeRuns,
+      subscribeRunThreads,
       upsert,
       setEnabled,
       delete: deleteTask,

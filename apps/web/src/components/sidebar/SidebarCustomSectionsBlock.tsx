@@ -20,7 +20,9 @@ import {
   type LocalApi,
 } from "@t3tools/contracts";
 import { isAbsolutePath } from "@t3tools/shared/path";
+import { useNavigate } from "@tanstack/react-router";
 import { useGT, useMessages } from "gt-react";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { cloneElement, isValidElement, useState, type ComponentProps, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -33,6 +35,7 @@ import { useProjects, waitForProject } from "../../state/entities";
 import { useConnectedEnvironmentIds, usePrimaryEnvironmentId } from "../../state/environments";
 import { projectEnvironment } from "../../state/projects";
 import { readEnvironmentScope } from "../../state/session";
+import { buildThreadRouteParams } from "../../threadRoutes";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { SidebarSection } from "../Sidebar.logic";
 import { useSidebar } from "../ui/sidebar";
@@ -51,6 +54,8 @@ import {
   openSectionFolderDialog,
   setSidebarSectionChatProject,
   setSidebarSections,
+  showFewerSectionRows,
+  showMoreSectionRows,
   sidebarSectionChatProject,
   sidebarSectionRowId,
   useSectionFolderDialogRequest,
@@ -62,12 +67,14 @@ import {
   type SidebarSectionFolderMode,
   type SidebarSectionIndex,
 } from "./sidebarSections";
+import { SECTION_ROW_PAGE_COUNT } from "./sidebarSectionArrangement.logic";
+import { isReadClearableTone } from "./sidebarSectionLamp.logic";
+import { useMarkThreadsRead } from "./useMarkThreadsRead";
 
 type SectionMenuAction = `section:${string}`;
 type SidebarDraftBlockProps = ComponentProps<typeof SidebarDraftBlock>;
 
 const NO_DRAFT_IDS: readonly DraftId[] = [];
-const NO_THREADS: readonly EnvironmentThreadShell[] = [];
 
 function isSectionMenuAction(action: string): action is SectionMenuAction {
   return action.startsWith("section:");
@@ -107,6 +114,9 @@ export function useSidebarCustomSections(input: {
     threadKeys: readonly string[];
   } | null>(null);
   const startChatInSection = useStartSidebarSectionChat(newThreadContext.handleNewThread);
+  const navigate = useNavigate();
+  const markThreadsRead = useMarkThreadsRead();
+  const { toneOf } = sectionIndex.display;
   useSidebarSectionThreads(sections, input.connectedEnvironmentIds);
   const draftSectionIds = useComposerDraftStore(
     useShallow((store) =>
@@ -281,12 +291,37 @@ export function useSidebarCustomSections(input: {
             ) ?? null
           );
         });
+        const unread = [...group.threads, ...group.hiddenThreads].filter((thread) =>
+          isReadClearableTone(toneOf(thread)),
+        );
         rows.push(
           <SidebarCustomSectionHeader
             key={section.id}
             section={section}
             isDropTarget={dropTargetId === section.id}
-            hiddenThreads={section.collapsed ? group.hiddenThreads : NO_THREADS}
+            lamp={group.lamp}
+            lampEntries={group.hiddenThreads.flatMap((thread) => {
+              const tone = toneOf(thread);
+              return tone === null
+                ? []
+                : [
+                    {
+                      key: threadShellKey(thread),
+                      tone,
+                      title: thread.title,
+                      onOpen: () => {
+                        if (isMobile) setOpenMobile(false);
+                        void navigate({
+                          to: "/$environmentId/$threadId",
+                          params: buildThreadRouteParams(
+                            scopeThreadRef(thread.environmentId, thread.id),
+                          ),
+                        });
+                      },
+                    },
+                  ];
+            })}
+            onMarkAllRead={unread.length > 0 ? () => markThreadsRead(unread) : undefined}
             folderName={target?.available ? target.project?.title : undefined}
             // Projects of an environment that is not connected yet are unknown, not missing.
             folderMissing={
@@ -341,6 +376,33 @@ export function useSidebarCustomSections(input: {
             ),
           );
         }
+        const moreRow = (kind: "more" | "less") => (
+          <li key={`${kind}:${section.id}`} className="list-none">
+            <button
+              type="button"
+              data-sidebar-row={`${sidebarSectionRowId(section.id)}:${kind}`}
+              data-sidebar-parent={sidebarSectionRowId(section.id)}
+              onClick={() =>
+                kind === "more" ? showMoreSectionRows(section.id) : showFewerSectionRows(section.id)
+              }
+              className="flex h-7 w-full cursor-pointer items-center gap-2.5 rounded-md px-(--sidebar-row-content-inset) text-left text-xs text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              {/* Plus means "add", so revealing more uses a chevron, as the settled shelf does. */}
+              {kind === "more" ? (
+                <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
+              ) : (
+                <ChevronUpIcon aria-hidden className="size-3.5 shrink-0" />
+              )}
+              {kind === "more"
+                ? gt("{count, plural, one {Show {count} more} other {Show {count} more}}", {
+                    count: Math.min(group.foldedCount, SECTION_ROW_PAGE_COUNT),
+                  })
+                : gt("Show less")}
+            </button>
+          </li>
+        );
+        if (group.foldedCount > 0) rows.push(moreRow("more"));
+        if (group.unfolded) rows.push(moreRow("less"));
       }
       return rows;
     },

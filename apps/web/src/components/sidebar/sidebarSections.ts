@@ -34,8 +34,21 @@ import { useScratchProject } from "../../hooks/useScratchProject";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { readProject } from "../../state/entities";
 import { environmentThreadShells, threadFamilies } from "../../state/threads";
+import { useUiStateStore } from "../../uiStateStore";
+import { useScheduledListedRunThreadKeys } from "../scheduled/useScheduledRunThreads";
 import { orderItemsByPreferredIds, type SidebarSection } from "../Sidebar.logic";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import {
+  arrangeSectionThreads,
+  hidesScheduledRun,
+  SECTION_INITIAL_ROW_COUNT,
+  SECTION_ROW_PAGE_COUNT,
+} from "./sidebarSectionArrangement.logic";
+import {
+  resolveSidebarSectionLamp,
+  sectionLampToneOfVisitedThread,
+  type SectionLampTone,
+} from "./sidebarSectionLamp.logic";
 
 const LEGACY_SECTIONS_STORAGE_KEY = "t3code:sidebar:custom-sections";
 const LegacySidebarSections = Schema.Array(SidebarCustomSectionSchema);
@@ -92,16 +105,64 @@ export function setSidebarSections(
   void persistClientSettingsPatch({ sidebarCustomSections: next });
 }
 
+/** How open sections lay out their rows: what floats up, what is folded, what is left out. */
+export interface SidebarSectionDisplay {
+  /** Chats scheduled runs started; they live under Scheduled instead. */
+  readonly scheduledRunThreadKeys: ReadonlySet<string>;
+  readonly toneOf: (thread: EnvironmentThreadShell) => SectionLampTone | null;
+  readonly rowLimit: (sectionId: string) => number;
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set();
+
+const DEFAULT_SECTION_DISPLAY: SidebarSectionDisplay = {
+  scheduledRunThreadKeys: NO_KEYS,
+  toneOf: (thread) => sectionLampToneOfVisitedThread(thread, undefined),
+  rowLimit: () => SECTION_INITIAL_ROW_COUNT,
+};
+
+// How far each open section is unfolded; kept for the session only.
+const useSectionRowLimitStore = create<{ readonly limits: Readonly<Record<string, number>> }>(
+  () => ({ limits: {} }),
+);
+
+export function showMoreSectionRows(sectionId: string) {
+  useSectionRowLimitStore.setState(({ limits }) => ({
+    limits: {
+      ...limits,
+      [sectionId]: (limits[sectionId] ?? SECTION_INITIAL_ROW_COUNT) + SECTION_ROW_PAGE_COUNT,
+    },
+  }));
+}
+
+export function showFewerSectionRows(sectionId: string) {
+  useSectionRowLimitStore.setState(({ limits }) => {
+    const { [sectionId]: _dropped, ...rest } = limits;
+    return { limits: rest };
+  });
+}
+
 export function useSidebarSectionIndex() {
   const [sections] = useSidebarSections();
-  return indexSidebarSections(sections);
+  const scheduledRunThreadKeys = useScheduledListedRunThreadKeys();
+  const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const limits = useSectionRowLimitStore((state) => state.limits);
+  return indexSidebarSections(sections, {
+    scheduledRunThreadKeys,
+    toneOf: (thread) =>
+      sectionLampToneOfVisitedThread(thread, localLastVisitedAtById[threadShellKey(thread)]),
+    rowLimit: (sectionId) => limits[sectionId] ?? SECTION_INITIAL_ROW_COUNT,
+  });
 }
 
 export function sidebarSectionRowId(id: string) {
   return `custom-section:${id}`;
 }
 
-export function indexSidebarSections(sections: readonly CustomSidebarSection[]) {
+export function indexSidebarSections(
+  sections: readonly CustomSidebarSection[],
+  display: SidebarSectionDisplay = DEFAULT_SECTION_DISPLAY,
+) {
   const manual = new Map(
     sections.flatMap((section) => section.threadKeys.map((key) => [key, section.id] as const)),
   );
@@ -119,7 +180,9 @@ export function indexSidebarSections(sections: readonly CustomSidebarSection[]) 
   );
   return {
     sections,
+    display,
     linked,
+    placedByHand: (threadKey: string) => manual.has(threadKey),
     // An empty folder stays hidden when every project in it belongs to a linked section.
     linksEveryProject(projectRefs: readonly ScopedProjectRef[]) {
       return projectRefs.every((ref) => linked.has(scopedProjectKey(ref)));
@@ -384,19 +447,54 @@ export function splitCustomSidebarSections(
     sectionIdByThread.size === 0
       ? threads
       : threads.filter((thread) => !sectionIdByThread.has(threadShellKey(thread)));
+  const { display } = sectionIndex;
   const groups = sectionIndex.sections.map((section) => {
+    // Runs of scheduled tasks stay under Scheduled; they keep their section only so they
+    // do not fall back into the project's shelf.
     const threads = orderItemsByPreferredIds({
       items: sectionThreads.get(section.id) ?? NO_THREADS,
       preferredIds: section.threadKeys,
       getId: threadShellKey,
+    }).filter((thread) => {
+      const threadKey = threadShellKey(thread);
+      return !hidesScheduledRun({
+        threadKey,
+        scheduledRunThreadKeys: display.scheduledRunThreadKeys,
+        placedByHand: sectionIndex.placedByHand(threadKey),
+        pinned: thread.pinnedAt != null,
+        routeThreadKey: routeRowThreadKey,
+      });
     });
-    const shown = section.collapsed ? routeThreadOnly(threads, routeRowThreadKey) : threads;
+    if (section.collapsed) {
+      const shown = routeThreadOnly(threads, routeRowThreadKey);
+      /** The closed section's rows its header lamp speaks for: all but the open chat's row. */
+      const hiddenThreads =
+        shown.length === 0 ? threads : threads.filter((thread) => !shown.includes(thread));
+      return {
+        section,
+        threads: shown,
+        hiddenThreads,
+        lamp: resolveSidebarSectionLamp(hiddenThreads, display.toneOf),
+        foldedCount: 0,
+        unfolded: false,
+      };
+    }
+    const limit = display.rowLimit(section.id);
+    const arranged = arrangeSectionThreads({
+      threads,
+      keyOf: threadShellKey,
+      toneOf: display.toneOf,
+      isPinned: (thread) => thread.pinnedAt != null,
+      routeThreadKey: routeRowThreadKey,
+      limit,
+    });
     return {
       section,
-      threads: shown,
-      /** The closed section's rows its header lamp speaks for: all but the open chat's row. */
-      hiddenThreads:
-        shown.length === 0 ? threads : threads.filter((thread) => !shown.includes(thread)),
+      threads: arranged.threads,
+      hiddenThreads: NO_THREADS,
+      lamp: null,
+      foldedCount: arranged.foldedCount,
+      unfolded: limit > SECTION_INITIAL_ROW_COUNT,
     };
   });
   return {
@@ -415,7 +513,11 @@ export function splitCustomSidebarSections(
       sectionByThreadKey,
       renderedThreadKeys: new Set(groups.flatMap(({ threads }) => threads.map(threadShellKey))),
       layoutKey: JSON.stringify(
-        groups.map(({ section, threads }) => [section.id, threads.map(threadShellKey)]),
+        groups.map(({ section, threads, foldedCount }) => [
+          section.id,
+          threads.map(threadShellKey),
+          foldedCount,
+        ]),
       ),
     },
   };

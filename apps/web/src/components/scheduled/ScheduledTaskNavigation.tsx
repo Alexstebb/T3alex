@@ -36,12 +36,22 @@ import {
 } from "../../hooks/useSettings";
 import { cn, randomUUID } from "../../lib/utils";
 import { isScheduledWorkspacePath } from "../sidebar/mainAppLocation";
-import { SidebarSectionLamp } from "../sidebar/SidebarSectionLamp";
+import {
+  SectionLampToneIcon,
+  SidebarSectionLamp,
+  type SectionLampEntry,
+} from "../sidebar/SidebarSectionLamp";
 import {
   countSectionLampTones,
+  isReadClearableTone,
   resolveSectionLamp,
   type SectionLamp,
+  type SectionLampTone,
 } from "../sidebar/sidebarSectionLamp.logic";
+import { useMarkThreadsRead } from "../sidebar/useMarkThreadsRead";
+import { buildThreadRouteParams } from "../../threadRoutes";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useScheduledChatStates } from "./scheduledChatStates";
 import { Button } from "../ui/button";
 import { Dialog, DialogClose, DialogFooter, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -70,6 +80,7 @@ import {
   moveScheduledTaskToSection,
   removeScheduledTaskSection,
   ScheduledTaskOrganization,
+  scheduledSidebarLamp,
   scheduledTaskLampTone,
   scheduledTaskOrganizationKey,
   scheduledTaskState,
@@ -132,6 +143,74 @@ function useScheduledTaskOrganization() {
   return [organization, setOrganization] as const;
 }
 
+/**
+ * The collapsed Scheduled header's lamp and its popover: the tasks behind it, opening the
+ * chat that needs the user (else the task), and "Mark all as read" for their results.
+ */
+export function useScheduledHeaderLamp(
+  rows: readonly ScheduledTaskNavigationRow[],
+  enabled: boolean,
+) {
+  const router = useRouter();
+  const [organization, setOrganization] = useScheduledTaskOrganization();
+  const nowMinute = useNowMinute();
+  const chatStates = useScheduledChatStates(rows);
+  const markThreadsRead = useMarkThreadsRead();
+  if (!enabled) return null;
+  const chatToneOf = (key: string) => chatStates.get(key)?.tone ?? null;
+  const lamp = scheduledSidebarLamp(rows, organization, Date.parse(nowMinute), chatToneOf);
+  if (lamp === null) return null;
+  const toned = rows.flatMap((row) => {
+    const key = scheduledTaskOrganizationKey(row.environmentId, row.task.id);
+    const tone = scheduledTaskLampTone(organization, key, row.task, chatToneOf(key));
+    return tone === null ? [] : [{ key, row, tone }];
+  });
+  const entries: SectionLampEntry[] = toned.map(({ key, row, tone }) => {
+    const chat = chatStates.get(key);
+    return {
+      key,
+      tone,
+      title: row.task.title,
+      onOpen: () => {
+        if (chat?.thread != null && chat.tone === tone) {
+          void router.navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(
+              scopeThreadRef(chat.thread.environmentId, chat.thread.id),
+            ),
+          });
+        } else {
+          void router.navigate({
+            to: "/scheduled",
+            search: { environmentId: row.environmentId, taskId: row.task.id },
+          });
+        }
+      },
+    };
+  });
+  const unread = toned.filter(
+    ({ key, row }) =>
+      isScheduledTaskUnread(organization, key, row.task) ||
+      (chatStates.get(key)?.unreadThreads.length ?? 0) > 0,
+  );
+  return {
+    lamp,
+    entries,
+    onMarkAllRead:
+      unread.length === 0 || !toned.some(({ tone }) => isReadClearableTone(tone))
+        ? undefined
+        : () => {
+            setOrganization((current) =>
+              unread.reduce(
+                (next, { key, row }) => markScheduledTaskSeen(next, key, row.task, Date.now()),
+                current,
+              ),
+            );
+            markThreadsRead(unread.flatMap(({ key }) => chatStates.get(key)?.unreadThreads ?? []));
+          },
+  };
+}
+
 function runAtMs(task: ScheduledTask) {
   return task.schedule.type === "once" ? Date.parse(task.schedule.runAt) : Number.POSITIVE_INFINITY;
 }
@@ -149,6 +228,7 @@ export function ScheduledTaskNavigation(props: {
   const gt = useGT();
   const [organization, setOrganization] = useScheduledTaskOrganization();
   const nowMinute = useNowMinute();
+  const chatStates = useScheduledChatStates(props.rows);
   const [renamingSection, setRenamingSection] = useState<ScheduledTaskSection>();
   const nameDialog = props.creatingSection ? null : renamingSection;
   const closeNameDialog = () => {
@@ -201,7 +281,9 @@ export function ScheduledTaskNavigation(props: {
   const lampOf = (entries: readonly { key: string; row: ScheduledTaskNavigationRow }[]) =>
     resolveSectionLamp(
       countSectionLampTones(
-        entries.map(({ key, row }) => scheduledTaskLampTone(organization, key, row.task)),
+        entries.map(({ key, row }) =>
+          scheduledTaskLampTone(organization, key, row.task, chatStates.get(key)?.tone ?? null),
+        ),
       ),
     );
 
@@ -221,6 +303,7 @@ export function ScheduledTaskNavigation(props: {
       selected={props.selectedKey === key}
       pinned={pinnedKeys.has(key)}
       unread={isScheduledTaskUnread(organization, key, row.task)}
+      chatTone={chatStates.get(key)?.tone ?? null}
       onMarkRead={() =>
         setOrganization((current) => markScheduledTaskSeen(current, key, row.task, Date.now()))
       }
@@ -429,6 +512,8 @@ function ScheduledTaskNavigationItem(props: {
   readonly selected: boolean;
   readonly pinned: boolean;
   readonly unread: boolean;
+  /** What the task's run chats say, when one is working or needs the user. */
+  readonly chatTone: SectionLampTone | null;
   readonly sectionId: string | null;
   readonly sections: readonly ScheduledTaskSection[];
   readonly onSelect: () => void;
@@ -467,9 +552,12 @@ function ScheduledTaskNavigationItem(props: {
         <span
           aria-hidden
           data-unread={props.unread ? "" : undefined}
+          data-chat-tone={props.chatTone ?? undefined}
           className="flex size-2 shrink-0 items-center justify-center"
         >
-          {status === "running" ? (
+          {props.chatTone !== null && props.chatTone !== "working" ? (
+            <SectionLampToneIcon tone={props.chatTone} className="size-3" />
+          ) : status === "running" || props.chatTone === "working" ? (
             <span className="size-2 rounded-full border border-info" />
           ) : props.unread ? (
             <span

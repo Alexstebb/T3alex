@@ -12886,5 +12886,6 @@
   "9ca4894e6d153dcb": "{count} hit a usage limit",
   "57b7688c78b33028": "{count} failed",
   "6b87a6cb8bc4b636": "{count, plural, one {{count} unread reply} other {{count} unread replies}}",
-  "f1851f105be1e49f": "{count} working"
+  "f1851f105be1e49f": "{count} working",
+  "b78a7929feb88b2c": "Mark all as read"
 }

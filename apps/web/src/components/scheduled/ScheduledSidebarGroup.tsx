@@ -6,7 +6,6 @@ import { ArrowUpRightIcon, CalendarClockIcon, ChevronDownIcon, PlusIcon } from "
 import { memo, useId, useState } from "react";
 
 import { useLocalStorage, writeLocalStorageValue } from "../../hooks/useLocalStorage";
-import { useNowMinute } from "../../hooks/useNowMinute";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useThreadRouteRef } from "../../hooks/useThreadRouteTarget";
 import { cn } from "../../lib/utils";
@@ -15,8 +14,8 @@ import { SidebarSectionLamp } from "../sidebar/SidebarSectionLamp";
 import { Button } from "../ui/button";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ScheduledTaskNavigation } from "./ScheduledTaskNavigation";
-import { scheduledSidebarLamp, scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
+import { ScheduledTaskNavigation, useScheduledHeaderLamp } from "./ScheduledTaskNavigation";
+import { scheduledTaskOrganizationKey } from "./scheduledTaskOrganization";
 import { validateScheduledWorkspaceSearch } from "./scheduledWorkspaceSearch";
 import { useScheduledThreadTask } from "./useScheduledThreadTask";
 import { useScheduledWorkspaceTasks } from "./useScheduledWorkspaceTasks";
@@ -41,7 +40,6 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
   const { isMobile, setOpenMobile } = useSidebar();
   const { rows, sources, isReady } = useScheduledWorkspaceTasks();
   const organization = useClientSettings(selectOrganization);
-  const nowMinute = useNowMinute();
   const selectedKey = useSelectedScheduledTaskKey();
   const loading = !isReady || sources.some(({ data, error }) => data === null && error === null);
   // Pinned tasks stay listed while collapsed, so only the hidden ones light the header.
@@ -51,9 +49,7 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
         scheduledTaskOrganizationKey(row.environmentId, row.task.id),
       ),
   );
-  const lamp = collapsed
-    ? scheduledSidebarLamp(hiddenRows, organization, Date.parse(nowMinute))
-    : null;
+  const headerLamp = useScheduledHeaderLamp(hiddenRows, collapsed);
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
   };
@@ -78,7 +74,6 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
             <T>Scheduled</T>
           </span>
-          {lamp ? <SidebarSectionLamp lamp={lamp} /> : null}
           <ChevronDownIcon
             aria-hidden
             className={cn(
@@ -87,6 +82,15 @@ export const ScheduledSidebarGroup = memo(function ScheduledSidebarGroup() {
             )}
           />
         </button>
+        {headerLamp ? (
+          <span className="mr-1 flex">
+            <SidebarSectionLamp
+              lamp={headerLamp.lamp}
+              entries={headerLamp.entries}
+              onMarkAllRead={headerLamp.onMarkAllRead}
+            />
+          </span>
+        ) : null}
         {!collapsed ? (
           <>
             <Tooltip>

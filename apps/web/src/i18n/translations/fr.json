@@ -12877,5 +12877,6 @@
   "9ca4894e6d153dcb": "{count} ont atteint la limite d’utilisation",
   "57b7688c78b33028": "{count} en échec",
   "6b87a6cb8bc4b636": "{count, plural, one {{count} réponse non lue} other {{count} réponses non lues}}",
-  "f1851f105be1e49f": "{count} en cours"
+  "f1851f105be1e49f": "{count} en cours",
+  "b78a7929feb88b2c": "Tout marquer comme lu"
 }

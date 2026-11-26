@@ -11,6 +11,7 @@ import {
 import {
   countSectionLampTones,
   resolveSectionLamp,
+  SECTION_LAMP_TONES,
   type SectionLampTone,
 } from "../sidebar/sidebarSectionLamp.logic";
 
@@ -155,8 +156,7 @@ export function markScheduledTaskUnseen(
   return { ...organization, lastSeenAt };
 }
 
-/** What a task adds to a closed group's lamp: an unseen result, else a run in progress. */
-export function scheduledTaskLampTone(
+function taskOwnLampTone(
   organization: ScheduledTaskOrganization,
   taskKey: string,
   task: ScheduledTaskResult,
@@ -167,25 +167,53 @@ export function scheduledTaskLampTone(
   return task.lastRunStatus === "running" ? "working" : null;
 }
 
+/** The more urgent of two lamp states, in the lamp's order. */
+export function moreUrgentLampTone(a: SectionLampTone | null, b: SectionLampTone | null) {
+  if (a === null) return b;
+  if (b === null) return a;
+  return SECTION_LAMP_TONES.indexOf(a) <= SECTION_LAMP_TONES.indexOf(b) ? a : b;
+}
+
+/**
+ * What a task adds to a closed group's lamp: an unseen result, else a run in progress, or
+ * what its runs' chats say when that is more urgent (a question, an approval, a failure).
+ */
+export function scheduledTaskLampTone(
+  organization: ScheduledTaskOrganization,
+  taskKey: string,
+  task: ScheduledTaskResult,
+  chatTone: SectionLampTone | null = null,
+): SectionLampTone | null {
+  return moreUrgentLampTone(taskOwnLampTone(organization, taskKey, task), chatTone);
+}
+
 /** The collapsed Scheduled header's lamp; tasks aged out of the list do not count. */
 export function scheduledSidebarLamp(
   rows: readonly { readonly environmentId: EnvironmentId; readonly task: ScheduledTask }[],
   organization: ScheduledTaskOrganization,
   now: number,
+  chatToneOf: (taskKey: string) => SectionLampTone | null = () => null,
 ) {
-  const sectioned = indexScheduledTaskSections(organization);
+  const listed = scheduledTaskListing(organization, now);
   return resolveSectionLamp(
     countSectionLampTones(
       rows.map(({ environmentId, task }) => {
         const key = scheduledTaskOrganizationKey(environmentId, task.id);
-        const listed =
-          organization.pinnedTaskKeys.includes(key) ||
-          sectioned.has(key) ||
-          automaticScheduledGroup(task, now) !== "hidden";
-        return listed ? scheduledTaskLampTone(organization, key, task) : null;
+        return listed(key, task)
+          ? scheduledTaskLampTone(organization, key, task, chatToneOf(key))
+          : null;
       }),
     ),
   );
+}
+
+/** Whether the Scheduled list shows a task: pinned, in a subsection, or not aged out. */
+export function scheduledTaskListing(organization: ScheduledTaskOrganization, now: number) {
+  const sectioned = indexScheduledTaskSections(organization);
+  return (key: string, task: ScheduledTask) =>
+    organization.pinnedTaskKeys.includes(key) ||
+    sectioned.has(key) ||
+    automaticScheduledGroup(task, now) !== "hidden";
 }
 
 /** Drops every trace of a deleted task: pin, subsection placement and last-seen time. */

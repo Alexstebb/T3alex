@@ -12814,5 +12814,6 @@
   "9ca4894e6d153dcb": "{count}개 사용량 한도 도달",
   "57b7688c78b33028": "{count}개 실패",
   "6b87a6cb8bc4b636": "{count, plural, other {읽지 않은 답장 {count}개}}",
-  "f1851f105be1e49f": "{count}개 작업 중"
+  "f1851f105be1e49f": "{count}개 작업 중",
+  "b78a7929feb88b2c": "모두 읽음으로 표시"
 }

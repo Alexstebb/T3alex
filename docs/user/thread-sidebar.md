@@ -171,8 +171,14 @@ You can move several selected threads at once, including threads from different
 projects. Click the section name to collapse it. A collapsed section lights up when one of its
 chats needs you: the light takes the icon and color of the most urgent one (a question, an
 approval, a failure, or an unread reply) and shows a number when more than one is waiting. A
-section whose chats are only working shows the working icon instead. Hover the light to see what
-is waiting. Use the section's menu to rename, reorder, or remove it.
+section whose chats are only working shows the working icon instead. Click the light to list
+those chats, most urgent first, and open one; **Mark all as read** there, or in the section's
+menu, clears unread replies and failures but leaves questions and approvals waiting. Use the
+section's menu to rename, reorder, or remove it.
+
+An open section lists chats that need you first (after pinned chats), then the rest in their
+usual order. It shows ten chats; **Show more** reveals the rest and **Show less** folds them
+again. The open chat and chats that need you always stay visible.
 Removing a section returns its threads to their usual places. Sections are saved in your browser
 or desktop profile.
 
@@ -180,7 +186,10 @@ Choose **Link folder** from a section's menu to use an existing folder as its pr
 project's chats appear in the section unless you move them elsewhere. Click the **+** beside
 the section name to start a chat there, or choose the section in the new-thread picker. Chats
 started in a linked section use the linked folder as their project. A folder can be linked to
-only one section.
+only one section. Chats started by a scheduled task stay under **Scheduled** instead of in the
+section, unless you moved one into the section yourself, pinned it, or have it open. When such a
+chat waits for your answer or approval, the task's row and the collapsed **Scheduled** header show
+it.
 
 To start a section's chats in a folder without pulling that folder's other chats into the
 section, choose **Start chats in folder…** instead. Several sections can share the same folder

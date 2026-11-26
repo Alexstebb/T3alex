@@ -444,6 +444,8 @@ import {
   ScheduledTaskListResult,
   ScheduledTaskRunsInput,
   ScheduledTaskRunsResult,
+  ScheduledTaskRunThreadsInput,
+  ScheduledTaskRunThreadsResult,
   ScheduledTaskRunNowInput,
   ScheduledTaskRotateWebhookTokenInput,
   ScheduledTaskListWebhookDeliveriesInput,
@@ -647,6 +649,8 @@ export const WS_METHODS = {
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksSubscribeRuns: "scheduledTasks.subscribeRuns",
+  // Local fork: which chats scheduled runs started, so sidebar sections can leave them out.
+  scheduledTasksSubscribeRunThreads: "scheduledTasks.subscribeRunThreads",
   scheduledTasksUpsert: "scheduledTasks.upsert",
   scheduledTasksSetEnabled: "scheduledTasks.setEnabled",
   scheduledTasksDelete: "scheduledTasks.delete",
@@ -2382,6 +2386,16 @@ const WsScheduledTasksSubscribeRunsRpc = Rpc.make(WS_METHODS.scheduledTasksSubsc
   stream: true,
 });
 
+const WsScheduledTasksSubscribeRunThreadsRpc = Rpc.make(
+  WS_METHODS.scheduledTasksSubscribeRunThreads,
+  {
+    payload: ScheduledTaskRunThreadsInput,
+    success: ScheduledTaskRunThreadsResult,
+    error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+
 const WsScheduledTasksUpsertRpc = Rpc.make(WS_METHODS.scheduledTasksUpsert, {
   payload: ScheduledTaskUpsertInput,
   success: ScheduledTaskMutationResult,
@@ -2561,6 +2575,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkflowsDeleteDefinitionRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksSubscribeRunsRpc,
+  WsScheduledTasksSubscribeRunThreadsRpc,
   WsScheduledTasksUpsertRpc,
   WsScheduledTasksSetEnabledRpc,
   WsScheduledTasksDeleteRpc,

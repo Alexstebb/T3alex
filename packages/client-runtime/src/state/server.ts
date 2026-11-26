@@ -1666,6 +1666,11 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:scheduled-task:runs:live",
       tag: WS_METHODS.scheduledTasksSubscribeRuns,
     }),
+    // Local fork: chats started by scheduled runs, which custom sidebar sections leave out.
+    scheduledTaskRunThreadsLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:scheduled-task:run-threads:live",
+      tag: WS_METHODS.scheduledTasksSubscribeRunThreads,
+    }),
     // A cold transcript scan is measured in seconds, so keep the result around
     // long enough that switching windows or re-rendering does not rescan. With
     // nothing to show yet, the server's last scan answers first, then a plain

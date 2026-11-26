@@ -1241,6 +1241,77 @@ it.effect("a run interrupted right after it reserves the task does not block the
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
+it.effect("lists the chats scheduled runs started, not chats a task only continues", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const taskId = ScheduledTaskId.make("task:runs");
+    const now = "2026-11-20T12:00:00.000Z";
+    for (const [threadId, deletedAt] of [
+      ["thread:run", null],
+      ["thread:own", null],
+      ["thread:gone", now],
+    ] as const) {
+      yield* sql`INSERT INTO orchestration_v2_projection_threads ${sql.insert({
+        thread_id: threadId,
+        project_id: "project:test",
+        title: threadId,
+        default_provider: "codex",
+        runtime_mode: "full-access",
+        interaction_mode: "default",
+        active_provider_thread_id: null,
+        created_at: now,
+        updated_at: now,
+        archived_at: null,
+        deleted_at: deletedAt,
+        payload_json: "{}",
+      })}`;
+    }
+    const message = (id: string, threadId: string, at: string, scheduled: boolean) =>
+      sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+        message_id: id,
+        thread_id: threadId,
+        run_id: null,
+        node_id: null,
+        role: "user",
+        streaming: 0,
+        created_at: at,
+        updated_at: at,
+        payload_json: JSON.stringify(scheduled ? { scheduledTaskId: taskId } : {}),
+      })}`;
+    yield* message("m:run:1", "thread:run", "2026-11-20T12:01:00.000Z", true);
+    yield* message("m:run:2", "thread:run", "2026-11-20T12:02:00.000Z", false);
+    yield* message("m:own:1", "thread:own", "2026-11-20T12:01:00.000Z", false);
+    yield* message("m:own:2", "thread:own", "2026-11-20T12:02:00.000Z", true);
+    yield* message("m:gone:1", "thread:gone", "2026-11-20T12:01:00.000Z", true);
+
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          ManagedPolicy.layerTest(),
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+            isScratchProject: () => Effect.succeed(false),
+          }),
+          NodeCrypto.layer,
+          Layer.succeed(Scheduler.Scheduler, { register: () => Effect.void }),
+        ),
+      ),
+    );
+    const first = yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      return yield* service.subscribeRunThreads().pipe(Stream.take(1), Stream.runCollect);
+    }).pipe(Effect.provide(layer));
+
+    assert.deepEqual(
+      [...first],
+      [{ threads: [{ threadId: ThreadId.make("thread:run"), taskId }] }],
+    );
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
 it.effect("lists the newest visible runs for one scheduled task with message anchors", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

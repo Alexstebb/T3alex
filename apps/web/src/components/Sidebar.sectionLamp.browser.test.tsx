@@ -14,18 +14,24 @@ import {
   ThreadId,
   type ScheduledTask,
   type ScheduledTaskId,
+  type SidebarCustomSection as CustomSidebarSection,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useAcknowledgeThreadWoke } from "../hooks/useThreadActions";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import * as environmentHooks from "../state/environments";
 import { useProjects, useQuietThreadShells } from "../state/entities";
 import { makeThreadFixture } from "../test-fixtures";
 import type { Project, Thread } from "../types";
+import {
+  useScheduledListedRunThreadKeys,
+  useScheduledRunThreads,
+} from "./scheduled/useScheduledRunThreads";
 import { useScheduledWorkspaceTasks } from "./scheduled/useScheduledWorkspaceTasks";
 import Sidebar from "./Sidebar";
 import { SidebarProvider } from "./ui/sidebar";
@@ -35,6 +41,8 @@ vi.mock("../state/environments", { spy: true });
 vi.mock("../hooks/useHandleNewThread", { spy: true });
 vi.mock("../hooks/useThreadRouteTarget", { spy: true });
 vi.mock("./scheduled/useScheduledWorkspaceTasks", { spy: true });
+vi.mock("./scheduled/useScheduledRunThreads", { spy: true });
+vi.mock("../hooks/useThreadActions", { spy: true });
 vi.mock("../commandPaletteBus", () => ({
   openCommandPalette: vi.fn(),
   isCommandPaletteOpen: () => false,
@@ -170,11 +178,29 @@ const scheduledTask = (id: string, patch: Partial<ScheduledTask>) =>
     ...patch,
   }) as unknown as ScheduledTask;
 
-async function renderSidebar() {
+interface SidebarFixture {
+  readonly sections?: readonly CustomSidebarSection[];
+  readonly threads?: readonly Thread[];
+  /** Chats started by runs of the "morning" task. */
+  readonly runThreadIds?: readonly string[];
+}
+
+const visit = vi.fn();
+
+async function renderSidebar(fixture: SidebarFixture = {}) {
   const stack = new DisposableStack();
+  visit.mockClear();
+  const runKeys = (fixture.runThreadIds ?? []).map((id) =>
+    scopedThreadKey(scopeThreadRef(local, ThreadId.make(id))),
+  );
   vi.mocked(useProjects).mockReturnValue([claude, t3]);
-  vi.mocked(useQuietThreadShells).mockReturnValue(threads);
+  vi.mocked(useQuietThreadShells).mockReturnValue(fixture.threads ?? threads);
   vi.mocked(useThreadRouteTarget).mockReturnValue(null);
+  vi.mocked(useScheduledRunThreads).mockReturnValue(
+    new Map(runKeys.map((key) => [key, JSON.stringify([local, "morning"])])),
+  );
+  vi.mocked(useScheduledListedRunThreadKeys).mockReturnValue(new Set(runKeys));
+  vi.mocked(useAcknowledgeThreadWoke).mockReturnValue(visit);
   vi.mocked(useScheduledWorkspaceTasks).mockReturnValue({
     rows: [
       { environmentId: local, timeZone: "Europe/Oslo", task: scheduledTask("morning", {}) },
@@ -204,7 +230,7 @@ async function renderSidebar() {
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     boringSidebarEnabled: false,
-    sidebarCustomSections: sections,
+    sidebarCustomSections: fixture.sections ?? sections,
   });
   const style = document.createElement("style");
   style.textContent = appCss;
@@ -234,7 +260,7 @@ describe("closed section lamps", () => {
     await page.viewport(1200, 900);
     await using _fixture = await renderSidebar();
     await expect
-      .element(page.getByRole("img", { name: "1 chat is waiting for you, 1 needs your answer" }))
+      .element(page.getByRole("button", { name: "1 chat is waiting for you, 1 needs your answer" }))
       .toBeVisible();
 
     const expected = {
@@ -248,12 +274,12 @@ describe("closed section lamps", () => {
       codex: { tone: "working", label: "1 chat is working" },
     } as const;
     for (const [sectionId, { tone, label }] of Object.entries(expected)) {
-      const lamp = lampOf(sectionId).getByRole("img", { name: label, exact: true });
+      const lamp = lampOf(sectionId).getByRole("button", { name: label, exact: true });
       await expect.element(lamp).toHaveAttribute("data-section-lamp", tone);
     }
     // A count shows only when more than one chat needs the user.
-    await expect.element(lampOf("faste").getByRole("img")).toHaveTextContent("");
-    await expect.element(lampOf("kunder").getByRole("img")).toHaveTextContent("2");
+    await expect.element(lampButton("faste")).toHaveTextContent("");
+    await expect.element(lampButton("kunder")).toHaveTextContent("2");
     expect(document.querySelector('[data-sidebar-section-drop="privat"] [data-section-lamp]')).toBe(
       null,
     );
@@ -262,17 +288,129 @@ describe("closed section lamps", () => {
     );
 
     // The Scheduled header lights for an unseen failed run, replacing the old yellow count.
-    await expect
-      .element(
-        page
-          .getByRole("img", { name: "2 chats are waiting for you, 1 failed, 1 unread reply" })
-          .first(),
-      )
-      .toBeVisible();
-    const scheduledLamp = page.getByRole("button", { name: /^Scheduled/ }).getByRole("img");
+    const scheduledLamp = page
+      .getByRole("button", { name: "2 chats are waiting for you, 1 failed, 1 unread reply" })
+      .last();
     await expect.element(scheduledLamp).toHaveAttribute("data-section-lamp", "failed");
+  });
+});
 
-    await userEvent.hover(lampOf("faste").getByRole("img"));
-    await expect.element(page.getByText("1 needs your answer", { exact: true })).toBeVisible();
+const lampButton = (sectionId: string) =>
+  page.elementLocator(
+    document.querySelector(`[data-sidebar-section-drop="${sectionId}"] [data-section-lamp]`) ??
+      document.body,
+  );
+const entriesShown = () =>
+  [...document.querySelectorAll("[data-section-lamp-entry]")].map((entry) => [
+    entry.getAttribute("data-section-lamp-entry"),
+    entry.textContent,
+  ]);
+const visitedIds = () => visit.mock.calls.map(([ref]) => ref.threadId as string).toSorted();
+
+describe("the lamp's popover", () => {
+  it("lists the chats behind the lamp, most urgent first, and opens one", async () => {
+    await page.viewport(1200, 900);
+    await using fixture = await renderSidebar();
+    await expect.element(lampButton("film")).toBeVisible();
+    // The lamp is its own control beside the header's toggle, not nested in it.
+    expect(lampButton("film").element().closest("[data-sidebar-row]")).toBeNull();
+    lampButton("film").element().focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.element(page.getByRole("button", { name: "film-2" })).toBeVisible();
+    expect(entriesShown()).toEqual([
+      ["failed", "film"],
+      ["done", "film-2"],
+    ]);
+    await userEvent.click(page.getByRole("button", { name: "film-2" }));
+    expect(fixture.screen.router?.state.location.pathname).toBe("/local/film-2");
+    await expect
+      .element(page.getByRole("button", { name: "Reklamefilm" }))
+      .toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("marks results and failures read, and leaves chats waiting for an answer lit", async () => {
+    await page.viewport(1200, 900);
+    const mixed = [
+      thread("ask", "input"),
+      thread("reply", "done"),
+      thread("broken", "failed"),
+      thread("busy", "working"),
+    ];
+    await using _fixture = await renderSidebar({
+      threads: mixed,
+      sections: [{ id: "mix", name: "Mix", collapsed: true, threadKeys: mixed.map(keyOf) }],
+    });
+    await userEvent.click(lampButton("mix"));
+    await expect.element(page.getByRole("button", { name: "Mark all as read" })).toBeVisible();
+    expect(entriesShown().map(([tone]) => tone)).toEqual(["input", "failed", "done", "working"]);
+    await userEvent.click(page.getByRole("button", { name: "Mark all as read" }));
+    expect(visitedIds()).toEqual(["broken", "reply"]);
+    await expect.element(lampButton("mix")).toHaveAttribute("data-section-lamp", "input");
+  });
+
+  it("offers Mark all as read in the section menu only when there is something to read", async () => {
+    await page.viewport(1200, 900);
+    await using _fixture = await renderSidebar();
+    await userEvent.click(page.getByRole("button", { name: "Section options for Faste agenter" }));
+    await expect
+      .element(page.getByRole("menuitem", { name: "Mark all as read" }))
+      .toHaveAttribute("aria-disabled", "true");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(page.getByRole("button", { name: "Section options for Kunder" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Mark all as read" }));
+    expect(visitedIds()).toEqual(["customer-a", "customer-b"]);
+  });
+});
+
+const sectionRowTexts = () =>
+  [...document.querySelectorAll<HTMLElement>("[data-thread-item]")].map(
+    (row) => row.textContent ?? "",
+  );
+
+describe("a long open section linked to a project", () => {
+  const own = Array.from({ length: 13 }, (_, index) => thread(`own-${index}`, "quiet"));
+  const runs = Array.from({ length: 20 }, (_, index) => thread(`run-${index}`, "quiet"));
+  const linkedSection = {
+    id: "claude",
+    name: "Claude",
+    collapsed: false,
+    threadKeys: [] as string[],
+    projectKey: chatProjectKey,
+  };
+
+  it("shows ten chats with what needs the user on top, then Show more and Show less", async () => {
+    await page.viewport(1200, 1400);
+    await using _fixture = await renderSidebar({
+      threads: [...own, thread("late-ask", "input"), ...runs, thread("run-ask", "input")],
+      sections: [linkedSection],
+      runThreadIds: [...runs.map((item) => item.id), "run-ask"],
+    });
+    await expect.element(page.getByRole("button", { name: "Show 4 more" })).toBeVisible();
+    expect(sectionRowTexts()[0]).toContain("late-ask");
+    expect(sectionRowTexts()).toHaveLength(10);
+    // Scheduled runs live under Scheduled: the section holds only the user's own 14 chats.
+    expect(sectionRowTexts().some((text) => text.includes("run-"))).toBe(false);
+    // The hidden run that waits for an answer lights the collapsed Scheduled header instead.
+    const scheduledRow = page.getByRole("button", { name: /^Scheduled/ }).element().parentElement!;
+    expect(
+      scheduledRow.querySelector("[data-section-lamp]")?.getAttribute("data-section-lamp"),
+    ).toBe("input");
+    await userEvent.click(page.getByRole("button", { name: "Show 4 more" }));
+    await expect.element(page.getByRole("button", { name: "Show less" })).toBeVisible();
+    expect(sectionRowTexts()).toHaveLength(14);
+    await userEvent.click(page.getByRole("button", { name: "Show less" }));
+    await expect.element(page.getByRole("button", { name: "Show 4 more" })).toBeVisible();
+    expect(sectionRowTexts()).toHaveLength(10);
+  });
+
+  it("keeps a scheduled run the user placed in the section by hand", async () => {
+    await page.viewport(1200, 900);
+    await using _fixture = await renderSidebar({
+      threads: [own[0]!, runs[0]!, runs[1]!],
+      sections: [{ ...linkedSection, threadKeys: [keyOf(runs[1]!)] }],
+      runThreadIds: [runs[0]!.id, runs[1]!.id],
+    });
+    await expect.element(page.getByText("run-1", { exact: true })).toBeVisible();
+    expect(sectionRowTexts().some((text) => text.includes("run-0"))).toBe(false);
   });
 });

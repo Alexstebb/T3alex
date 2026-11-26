@@ -1,4 +1,8 @@
-import { hasUnseenCompletion, resolveSidebarRowStatus } from "../Sidebar.logic";
+import {
+  hasUnseenCompletion,
+  resolveSidebarRowStatus,
+  resolveThreadLastVisitedAt,
+} from "../Sidebar.logic";
 
 /**
  * Most urgent first. Upstream's closed-folder dot ranks attention, failed, unread, working;
@@ -68,8 +72,26 @@ export function resolveSectionLamp(counts: SectionLampCounts): SectionLamp | nul
   return { tone, waiting, counts };
 }
 
-export function resolveSidebarSectionLamp(
-  threads: readonly SectionLampThread[],
+/** A thread's lamp state with the same visit time its row reads (server first, else local). */
+export function sectionLampToneOfVisitedThread(
+  thread: SectionLampThread,
+  localLastVisitedAt: string | undefined,
+): SectionLampTone | null {
+  return sectionLampToneOfThread({
+    ...thread,
+    lastVisitedAt: resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt),
+  });
+}
+
+export function resolveSidebarSectionLamp<T extends SectionLampThread>(
+  threads: readonly T[],
+  toneOf: (thread: T) => SectionLampTone | null = sectionLampToneOfThread,
 ): SectionLamp | null {
-  return resolveSectionLamp(countSectionLampTones(threads.map(sectionLampToneOfThread)));
+  if (threads.length === 0) return null;
+  return resolveSectionLamp(countSectionLampTones(threads.map(toneOf)));
+}
+
+/** Tones "Mark all as read" clears: an unread result or an unseen failure, never a question. */
+export function isReadClearableTone(tone: SectionLampTone | null) {
+  return tone === "done" || tone === "failed";
 }

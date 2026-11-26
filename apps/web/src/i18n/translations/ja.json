@@ -12818,5 +12818,6 @@
   "9ca4894e6d153dcb": "{count} 件が使用量の上限に到達",
   "57b7688c78b33028": "{count} 件が失敗",
   "6b87a6cb8bc4b636": "{count, plural, other {未読の返信 {count} 件}}",
-  "f1851f105be1e49f": "{count} 件が作業中"
+  "f1851f105be1e49f": "{count} 件が作業中",
+  "b78a7929feb88b2c": "すべて既読にする"
 }

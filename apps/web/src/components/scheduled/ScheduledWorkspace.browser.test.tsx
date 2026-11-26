@@ -677,11 +677,11 @@ describe("Scheduled task chats", () => {
     expect(pinned.element().querySelector(".border-info")).not.toBeNull();
     await expect.element(screen.getByRole("link", { name: /^Weekly/ })).not.toBeInTheDocument();
     // Only the hidden task lights the collapsed header.
-    expect(header.element().querySelector('[data-section-lamp="done"]')).not.toBeNull();
+    expect(headerRow(header).querySelector('[data-section-lamp="done"]')).not.toBeNull();
 
     await act(() => fixture.registry.set(tasksAtom, [{ ...task, enabled: true }]));
     await vi.waitFor(() => expect(pinned.element().querySelector("[data-unread]")).not.toBeNull());
-    expect(header.element().querySelector("[data-section-lamp]")).toBeNull();
+    expect(headerRow(header).querySelector("[data-section-lamp]")).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Options for Daily briefing" }));
     await expect.element(page.getByRole("menuitem", { name: "Unpin task" })).toBeVisible();
@@ -789,12 +789,12 @@ describe("Scheduled unread results", () => {
     await using screen = await renderWorkspace(fixture);
     const header = screen.getByRole("button", { name: SCHEDULED_HEADER });
     const lamp = '[data-section-lamp="done"]';
-    expect(header.element().querySelector(lamp)).not.toBeNull();
+    expect(headerRow(header).querySelector(lamp)).not.toBeNull();
     await expect
-      .element(header.getByRole("img", { name: "1 chat is waiting for you, 1 unread reply" }))
+      .element(page.getByRole("button", { name: "1 chat is waiting for you, 1 unread reply" }))
       .toBeVisible();
     await userEvent.click(header);
-    expect(header.element().querySelector(lamp)).toBeNull();
+    expect(headerRow(header).querySelector(lamp)).toBeNull();
 
     const allTasks = screen.getByRole("button", { name: /^All tasks/ });
     expect(allTasks.element().querySelector(lamp)).toBeNull();
@@ -802,6 +802,26 @@ describe("Scheduled unread results", () => {
     await vi.waitFor(() => expect(allTasks.element().querySelector(lamp)).not.toBeNull());
     await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     await expect.element(header).toBeVisible();
-    expect(header.element().querySelector(lamp)).not.toBeNull();
+    expect(headerRow(header).querySelector(lamp)).not.toBeNull();
+  });
+
+  it("lists the tasks behind a collapsed Scheduled header and marks their results read", async () => {
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    using _organization = withOrganization(unseen);
+    using fixture = createFixture();
+    await using screen = await renderWorkspace(fixture);
+    const header = screen.getByRole("button", { name: SCHEDULED_HEADER });
+    await userEvent.click(
+      page.getByRole("button", { name: "1 chat is waiting for you, 1 unread reply" }),
+    );
+    await expect
+      .element(page.getByRole("button", { name: "Daily briefing", exact: true }))
+      .toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Mark all as read" }));
+    await vi.waitFor(() =>
+      expect(headerRow(header).querySelector("[data-section-lamp]")).toBeNull(),
+    );
   });
 });
+
+const headerRow = (header: { element: () => Element }) => header.element().parentElement!;

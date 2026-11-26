@@ -12896,5 +12896,6 @@
   "9ca4894e6d153dcb": "{count} 个已达到使用上限",
   "57b7688c78b33028": "{count} 个失败",
   "6b87a6cb8bc4b636": "{count, plural, other {{count} 条未读回复}}",
-  "f1851f105be1e49f": "{count} 个进行中"
+  "f1851f105be1e49f": "{count} 个进行中",
+  "b78a7929feb88b2c": "全部标记为已读"
 }

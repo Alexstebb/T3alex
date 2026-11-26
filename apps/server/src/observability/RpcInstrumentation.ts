@@ -116,6 +116,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.workflowsDeleteDefinition]: "workflows",
   [WS_METHODS.scheduledTasksSubscribe]: "scheduledTasks",
   [WS_METHODS.scheduledTasksSubscribeRuns]: "scheduledTasks",
+  [WS_METHODS.scheduledTasksSubscribeRunThreads]: "scheduledTasks",
   [WS_METHODS.scheduledTasksUpsert]: "scheduledTasks",
   [WS_METHODS.scheduledTasksSetEnabled]: "scheduledTasks",
   [WS_METHODS.scheduledTasksDelete]: "scheduledTasks",

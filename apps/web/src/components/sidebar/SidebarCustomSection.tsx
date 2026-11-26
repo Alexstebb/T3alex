@@ -1,5 +1,3 @@
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { useGT } from "gt-react";
 import {
   ChevronDownIcon,
@@ -12,8 +10,6 @@ import {
 import { useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
-import { useUiStateStore } from "../../uiStateStore";
-import { resolveThreadLastVisitedAt } from "../Sidebar.logic";
 import { Button } from "../ui/button";
 import { Dialog, DialogClose, DialogFooter, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -24,29 +20,17 @@ import {
   type CustomSidebarSection,
   type SidebarSectionFolderMode,
 } from "./sidebarSections";
-import { resolveSidebarSectionLamp } from "./sidebarSectionLamp.logic";
-import { SidebarSectionLamp } from "./SidebarSectionLamp";
-
-/** The lamp for a closed section's hidden chats, read with the same visit times as their rows. */
-function useSectionLamp(threads: readonly EnvironmentThreadShell[]) {
-  const localLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
-  if (threads.length === 0) return null;
-  return resolveSidebarSectionLamp(
-    threads.map((thread) => ({
-      ...thread,
-      lastVisitedAt: resolveThreadLastVisitedAt(
-        thread.lastVisitedAt,
-        localLastVisitedAtById[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
-      ),
-    })),
-  );
-}
+import type { SectionLamp } from "./sidebarSectionLamp.logic";
+import { SidebarSectionLamp, type SectionLampEntry } from "./SidebarSectionLamp";
 
 export function SidebarCustomSectionHeader(props: {
   section: CustomSidebarSection;
   isDropTarget: boolean;
-  /** The chats a closed section hides; empty while it is open. */
-  hiddenThreads: readonly EnvironmentThreadShell[];
+  /** The closed section's status light and the chats behind it; null while it is open. */
+  lamp: SectionLamp | null;
+  lampEntries: readonly SectionLampEntry[];
+  /** Marks the section's finished and failed chats read; undefined when none are unread. */
+  onMarkAllRead: (() => void) | undefined;
   /** The project new chats start in, when there is one and it still exists. */
   folderName: string | undefined;
   folderMissing: boolean;
@@ -68,7 +52,6 @@ export function SidebarCustomSectionHeader(props: {
   const linked = section.projectKey !== undefined;
   const newChatLabel = gt("New chat in {section}", { section: section.name });
   const missingLabel = gt("This section's folder no longer exists as a project.");
-  const lamp = useSectionLamp(props.hiddenThreads);
 
   return (
     <li
@@ -108,7 +91,6 @@ export function SidebarCustomSectionHeader(props: {
             <TooltipPopup>{missingLabel}</TooltipPopup>
           </Tooltip>
         ) : null}
-        {lamp ? <SidebarSectionLamp lamp={lamp} /> : null}
         <ChevronDownIcon
           aria-hidden
           className={cn(
@@ -117,6 +99,13 @@ export function SidebarCustomSectionHeader(props: {
           )}
         />
       </button>
+      {props.lamp ? (
+        <SidebarSectionLamp
+          lamp={props.lamp}
+          entries={props.lampEntries}
+          onMarkAllRead={props.onMarkAllRead}
+        />
+      ) : null}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -168,6 +157,10 @@ export function SidebarCustomSectionHeader(props: {
               {gt("Stop starting chats in a folder")}
             </MenuItem>
           ) : null}
+          <MenuItem disabled={props.onMarkAllRead === undefined} onClick={props.onMarkAllRead}>
+            {gt("Mark all as read")}
+          </MenuItem>
+          <MenuSeparator />
           <MenuItem disabled={!props.canMoveUp} onClick={() => props.onMove(-1)}>
             {gt("Move up")}
           </MenuItem>

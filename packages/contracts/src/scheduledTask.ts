@@ -331,6 +331,21 @@ export const ScheduledTaskRunsResult = Schema.Struct({
 });
 export type ScheduledTaskRunsResult = typeof ScheduledTaskRunsResult.Type;
 
+/** Local fork: the chats a scheduled task's run started (their first user message came from a task). */
+export const ScheduledTaskRunThreadsInput = Schema.Struct({});
+export type ScheduledTaskRunThreadsInput = typeof ScheduledTaskRunThreadsInput.Type;
+
+export const ScheduledTaskRunThread = Schema.Struct({
+  threadId: ThreadId,
+  taskId: ScheduledTaskId,
+});
+export type ScheduledTaskRunThread = typeof ScheduledTaskRunThread.Type;
+
+export const ScheduledTaskRunThreadsResult = Schema.Struct({
+  threads: ForwardCompatibleArray(ScheduledTaskRunThread),
+});
+export type ScheduledTaskRunThreadsResult = typeof ScheduledTaskRunThreadsResult.Type;
+
 export const ScheduledTaskUpsertInput = Schema.Struct({
   id: Schema.optional(ScheduledTaskId),
   requireExisting: Schema.optional(Schema.Boolean).annotate({
