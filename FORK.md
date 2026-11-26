@@ -107,6 +107,7 @@ Clone to a **short path** with long paths enabled. NSIS (`makensis`) cannot read
 git clone -c core.longpaths=true https://github.com/Alexstebb/T3code-alex.git C:\src\t3code-alex
 cd C:\src\t3code-alex
 vp i
+Copy-Item .env.example .env   # enables T3 Connect; see "T3 Connect needs .env" below
 ```
 
 Build the branded installer (PowerShell, from the repo root):
@@ -133,8 +134,9 @@ Does not work in a branded build:
 
 ## Build and run (Linux)
 
-> **Not yet run end to end.** The tests cover the packaging config and the runtime names, but no branded
-> AppImage or .deb has been built and installed yet.
+> Built and installed end to end on Pop!_OS 24.04 (x86_64, COSMIC) on 2026-11-26 from `5e96ab7c24`: the .deb
+> installs beside the official `t3code` package, keeps `t3code://` with the official app, and uses `~/.t3-alex`
+> and `~/.config/t3code-alex`. No code fixes were needed.
 
 Build on a Linux machine of the same architecture; the browser secret helper links against libsecret and cannot
 be cross-built from Windows or macOS. Prerequisites are upstream's: see
@@ -145,6 +147,7 @@ toolchain, libsecret headers, ImageMagick), plus Git and Vite+ (`curl -fsSL http
 git clone https://github.com/Alexstebb/T3code-alex.git ~/src/t3code-alex
 cd ~/src/t3code-alex
 vp i
+cp .env.example .env   # enables T3 Connect; see "T3 Connect needs .env" below
 T3CODE_FORK_BRAND=alex vp run dist:desktop:linux
 ```
 
@@ -158,6 +161,18 @@ T3CODE_FORK_BRAND=alex vp run dist:desktop:linux
 
 The same limits as on Windows apply: no automatic updates and no `t3code://` sign-in callbacks. For daily use the
 updater replaces both packages (see [Updating](#updating)).
+
+### T3 Connect needs .env
+
+T3 Connect (account sign-in, linking this machine through the relay, guest links) is compiled in only when the
+build sees the public Clerk and relay identifiers from `.env`. Without `.env` the build still succeeds and the app
+starts, but Settings → Sharing & access has no T3 Connect section and nothing says why. `.env.example` holds the
+same public values the official release builds use (no secrets) and `.env` is gitignored, so copy it before
+`vp run dist:desktop:*`. To check a build, open Settings → Sharing & access: a "T3 Connect" row with a Sign in
+button means it is on.
+
+Sign in from the app's own dialog with **email and code**. The Apple, GitHub, Google and Microsoft buttons return
+through `t3code://`, which stays with the official app, so they do not come back to the branded build.
 
 ## Getting upstream updates
 
