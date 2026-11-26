@@ -67,6 +67,7 @@ def default_config(platform=None, env=None, home=None):
             "vp": "toolchain/node_modules/.bin/vp.cmd",
             "electronArgs": [],
             "copyEnvExample": True,
+            "appName": None,
         }
     config_home = Path(env.get("XDG_CONFIG_HOME") or home / ".config")
     return {
@@ -88,6 +89,8 @@ def default_config(platform=None, env=None, home=None):
         "vp": None,
         "electronArgs": [],
         "copyEnvExample": True,
+        # The .deb's package name: Electron files its safeStorage key in the keyring under it.
+        "appName": "t3code-alex",
     }
 
 
@@ -115,6 +118,7 @@ class Config:
     vp: object = None
     electron_args: list = field(default_factory=list)
     copy_env_example: bool = True
+    app_name: object = None
 
     @property
     def builds_dir(self):
@@ -177,6 +181,7 @@ def resolve_config(raw, path, platform=None):
         vp=str(resolved(raw["vp"])) if raw.get("vp") else None,
         electron_args=list(raw.get("electronArgs") or []),
         copy_env_example=bool(raw.get("copyEnvExample", True)),
+        app_name=raw.get("appName") or None,
     )
 
 

@@ -82,6 +82,13 @@ its folder. Write Windows paths with forward slashes or doubled backslashes; it 
   the same name) pointing at `<root>/launcher/t3launch.py`, a copy of these tools that only `setup`
   changes. The app itself writes a hidden URL-handler entry `com.t3tools.t3code.alex.desktop` at
   every start; the launcher sets `T3CODE_DESKTOP_LAUNCHER_PATH` so it points at the launcher too.
+- Electron files its safeStorage key in the keyring under the app's `package.json` name, and a bare
+  `electron main.cjs` is called "Electron". So the launcher and the smoke test start a build through
+  `apps/desktop/.t3launch/package.json`, named `appName` (`t3code-alex`, the .deb's name): without
+  it the build cannot decrypt the saved connections and cookies the .deb wrote.
+- `status` and the launcher look at Chromium's `SingletonLock` in the Electron profile, so an app
+  this tool did not start (the old .deb) counts as running: the launcher then hands over to it
+  without touching the database or settings, and `rollback --restore-db` refuses.
 - Chromium's sandbox needs unprivileged user namespaces, which Ubuntu 24.04 (and Pop!\_OS 24.04)
   only grant to programs an AppArmor profile names. `setup` writes such a profile for the builds
   folder and prints the two `sudo` commands to install it once. Until then the builds start with

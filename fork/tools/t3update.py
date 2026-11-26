@@ -89,6 +89,12 @@ def launcher_running(config):
     return any(t3platform.lock_is_held(lock) for lock in [config.launch_lock, *config.other_locks])
 
 
+def app_running(config):
+    """Whether anything has the profile open: a build, a launcher, or an app this tool did not start."""
+    return bool(running_builds(config) or launcher_running(config)
+                or t3platform.electron_profile_owner(config.user_data_dir))
+
+
 def run_logged(config, command, cwd, log_path, extra_env=None):
     log_path.parent.mkdir(parents=True, exist_ok=True)
     env = config_environment(config, extra_env)
@@ -369,6 +375,7 @@ def cmd_config(config, args):
     log(f"PATH first:       {config.path_prepend}")
     log(f"vp:               {config.vp or 'from PATH'}")
     log(f"copy .env.example:{' yes' if config.copy_env_example else ' no'}")
+    log(f"Electron app name:{' ' + config.app_name if config.app_name else ' none (starts dist-electron/main.cjs)'}")
     return EXIT_OK
 
 
@@ -390,6 +397,12 @@ def cmd_status(config, args):
         f"{'  (launcher lock held)' if lock else ''}")
     if pointer.get("current") and running and pointer["current"] not in running:
         log("          the app runs an older build; the current one is used at the next start")
+    owner = t3platform.electron_profile_owner(config.user_data_dir)
+    if owner:
+        pid, exe = owner
+        foreign = not t3core.builds_in_use([exe], config.builds_dir) if exe else True
+        log(f"app on the profile: pid {pid}, {exe or 'executable unknown'}"
+            f"{'  (not one of these builds; nothing here touches it)' if foreign else ''}")
     if args.fetch:
         require_source_repo(config)
         git(config, "fetch", "--quiet", config.remote)
@@ -505,7 +518,7 @@ def _update(config, args):
     log(f"previous = {pointer.get('previous')} (`rollback` goes back to it)")
     if pending:
         log("The launcher backs up the database once more right before the first start of the new build.")
-    if running or launcher_running(config):
+    if app_running(config):
         log("T3 Code is running and was left alone: quit and start it when it suits you.")
     record(config, "updated", f"{pointer.get('previous')} -> {name}")
     return EXIT_OK
@@ -529,7 +542,7 @@ def cmd_rollback(config, args):
         source = Path(args.restore_db)
         if not source.is_file():
             raise UpdateError(f"{source} not found")
-        if running_builds(config) or launcher_running(config):
+        if app_running(config):
             raise UpdateError("Quit T3 Code first: the database cannot be restored while the app has it open.")
         safety = config.rollback_dir / t3core.backup_name(f"before-restore-to-{previous}")
         t3core.backup_database(config.database, safety)
@@ -554,7 +567,7 @@ def cmd_rollback(config, args):
     pointer = modify_pointer(config, t3core.rolled_back)
     log(f"current = {pointer['current']}, previous = {pointer['previous']}")
     log(f"{pointer['previous']} will not be taken again by `update` until {config.upstream_ref} moves on.")
-    if running_builds(config) or launcher_running(config):
+    if app_running(config):
         log("T3 Code is running: quit and start it to switch.")
     record(config, "rollback", f"{pointer['previous']} -> {pointer['current']}")
     return EXIT_OK
@@ -656,7 +669,7 @@ def cmd_setup(config, args):
     log("")
     log(f"profile: {config.home} ({'found' if config.database.is_file() else 'NOT FOUND: a new profile will be created'})")
     log(f"Electron profile: {config.user_data_dir} ({'found' if config.user_data_dir.is_dir() else 'not found'})")
-    profile_text = t3platform.apparmor_profile_text(config.builds_dir)
+    profile_text = t3platform.apparmor_profile_text(os.path.realpath(config.builds_dir))
     (target / "apparmor-t3code-alex-builds").write_text(profile_text, encoding="utf-8", newline="\n")
     sandbox_restricted = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").is_file() and \
         Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip() == "1"

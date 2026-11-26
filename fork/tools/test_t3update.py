@@ -7,6 +7,8 @@ from contextlib import closing
 import json
 import os
 from pathlib import Path
+import re
+import socket
 import sqlite3
 import sys
 import tempfile
@@ -69,6 +71,7 @@ class ConfigDefaults(TempDir):
         self.assertEqual(config.brand, "alex")
         self.assertEqual(config.other_locks, [])
         self.assertEqual(config.electron_path(Path("b")).name, "electron")
+        self.assertEqual(config.app_name, "t3code-alex")
 
     def test_linux_defaults_follow_xdg_variables(self):
         env = {"XDG_DATA_HOME": str(self.tmp / "data"), "XDG_CONFIG_HOME": str(self.tmp / "conf")}
@@ -258,11 +261,99 @@ class DesktopEntry(unittest.TestCase):
         self.assertIn("Icon=/home/a/icon.png\n", entry)
         self.assertTrue(entry.startswith("[Desktop Entry]\nType=Application\nName=T3 Code Alex\n"))
 
-    def test_apparmor_profile_names_every_build(self):
-        text = t3platform.apparmor_profile_text("/home/a/.local/share/t3code-alex/release/builds")
-        self.assertIn('"/home/a/.local/share/t3code-alex/release/builds/*/apps/desktop/node_modules/electron/dist/'
-                      'electron" flags=(unconfined)', text)
+    def test_apparmor_profile_matches_the_resolved_electron_of_every_build(self):
+        builds = "/home/a/.local/share/t3code-alex/release/builds"
+        text = t3platform.apparmor_profile_text(builds)
+        glob = re.search(r'^profile t3code-alex-builds "([^"]+)" flags=\(unconfined\) \{$', text, re.M).group(1)
+        # AppArmor's * does not cross '/'; the kernel reports the executable with pnpm's links resolved.
+        pattern = re.compile("^" + re.escape(glob).replace(r"\*", "[^/]*") + "$")
+        resolved = (f"{builds}/f0ff791ee/node_modules/.pnpm/electron@44.10.1_supports-color@8.1.1/"
+                    "node_modules/electron/dist/electron")
+        self.assertRegex(resolved, pattern)
+        self.assertNotRegex(f"{builds}/f0ff791ee/x/node_modules/.pnpm/electron@1/node_modules/electron/dist/electron",
+                            pattern)
         self.assertIn("userns,", text)
+
+
+class AppFolder(TempDir):
+    def build(self, boot=True):
+        desktop = self.tmp / "b" / "apps" / "desktop"
+        (desktop / "dist-electron").mkdir(parents=True)
+        (desktop / "package.json").write_text(json.dumps({"name": "@t3tools/desktop", "version": "0.1.11"}))
+        (desktop / "dist-electron" / "main.cjs").write_text("")
+        if boot:
+            (desktop / "dist-electron" / "boot.cjs").write_text("")
+        return self.tmp / "b"
+
+    def config(self, platform):
+        return t3core.resolve_config(t3core.default_config(platform, {}, self.tmp), self.tmp / "r" / "t3update.json",
+                                     platform)
+
+    def test_linux_starts_the_build_under_the_packaged_apps_name(self):
+        build, config = self.build(), self.config("linux")
+        self.assertEqual(t3launch.electron_command(config, build)[-1], t3launch.APP_FOLDER)
+        t3launch.write_app_folder(config, build)
+        manifest = json.loads((build / "apps" / "desktop" / t3launch.APP_FOLDER / "package.json").read_text())
+        self.assertEqual(manifest, {"name": "t3code-alex", "version": "0.1.11", "private": True,
+                                    "main": "../dist-electron/boot.cjs"})
+
+    def test_falls_back_to_main_without_boot(self):
+        build = self.build(boot=False)
+        self.assertEqual(t3launch.app_manifest(self.config("linux"), build)["main"], "../dist-electron/main.cjs")
+
+    def test_windows_keeps_starting_main_directly(self):
+        build, config = self.build(), self.config("win32")
+        self.assertIsNone(config.app_name)
+        self.assertEqual(t3launch.electron_command(config, build)[-1], "dist-electron/main.cjs")
+        t3launch.write_app_folder(config, build)
+        self.assertFalse((build / "apps" / "desktop" / t3launch.APP_FOLDER).exists())
+
+
+class ProfileOwner(TempDir):
+    def test_parses_chromiums_singleton_lock(self):
+        self.assertEqual(t3platform.singleton_lock_pid("pop-os-138065", "pop-os"), 138065)
+        self.assertIsNone(t3platform.singleton_lock_pid("other-host-138065", "pop-os"))
+        self.assertIsNone(t3platform.singleton_lock_pid("pop-os-abc", "pop-os"))
+        self.assertIsNone(t3platform.singleton_lock_pid("garbage", "pop-os"))
+
+    @unittest.skipIf(sys.platform == "win32", "Chromium's SingletonLock symlink is Linux-only")
+    def test_sees_a_live_owner_and_ignores_a_stale_lock(self):
+        lock = self.tmp / "SingletonLock"
+        self.assertIsNone(t3platform.electron_profile_owner(self.tmp))
+        os.symlink(f"{socket.gethostname()}-{os.getpid()}", lock)
+        pid, exe = t3platform.electron_profile_owner(self.tmp)
+        self.assertEqual(pid, os.getpid())
+        self.assertEqual(Path(exe).resolve(), Path(sys.executable).resolve())
+        lock.unlink()
+        os.symlink(f"{socket.gethostname()}-999999999", lock)
+        self.assertIsNone(t3platform.electron_profile_owner(self.tmp))
+
+    def test_an_app_this_tool_did_not_start_counts_as_running(self):
+        config = t3core.resolve_config(t3core.default_config("linux", {}, self.tmp), self.tmp / "r" / "t3update.json",
+                                       "linux")
+        with mock.patch.object(t3platform, "executable_paths", return_value=["/opt/T3 Code Alex/t3code-alex"]), \
+                mock.patch.object(t3platform, "electron_profile_owner", return_value=(42, "/opt/T3 Code Alex/t3code-alex")):
+            self.assertEqual(t3update.running_builds(config), set())
+            self.assertTrue(t3update.app_running(config))
+
+    def test_launcher_leaves_database_and_settings_alone_while_the_profile_is_in_use(self):
+        config = t3core.resolve_config(t3core.default_config("linux", {}, self.tmp), self.tmp / "r" / "t3update.json",
+                                       "linux")
+        build = self.tmp / "b"
+        (build / "apps" / "desktop").mkdir(parents=True)
+        (build / "apps" / "desktop" / "package.json").write_text(json.dumps({"version": "1.0.0"}))
+        process = mock.Mock()
+        process.wait.return_value = 0
+        for owner, expected in (((42, "/opt/x"), False), (None, True)):
+            with mock.patch.object(t3launch, "resolve_current", return_value=({}, build, {})), \
+                    mock.patch.object(t3platform, "electron_profile_owner", return_value=owner), \
+                    mock.patch.object(t3launch, "take_pending_backup") as backup, \
+                    mock.patch.object(t3launch, "apply_pending_settings") as settings, \
+                    mock.patch.object(t3launch.subprocess, "Popen", return_value=process) as popen:
+                self.assertEqual(t3launch.launch(config), 0)
+            self.assertEqual(backup.called, expected)
+            self.assertEqual(settings.called, expected)
+            self.assertTrue(popen.called)
 
 
 class SmokeVerdict(unittest.TestCase):

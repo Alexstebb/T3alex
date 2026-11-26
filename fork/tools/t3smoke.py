@@ -164,6 +164,7 @@ def run_smoke(config, build, workdir, log_path, text_path=None, probe_args=None,
                                    extra=extra)
     if xvfb:
         env.pop("WAYLAND_DISPLAY", None)
+    t3launch.write_app_folder(config, build)
     command = t3launch.electron_command(config, build, [f"--remote-debugging-port={port}", *extra_args])
     result["command"] = command
     result["sandbox"] = t3platform.linux_sandbox_state(config.electron_path(build))[1]

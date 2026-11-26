@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -166,6 +167,33 @@ def executable_paths():
     return [exe for _pid, _ppid, exe in process_table() if exe]
 
 
+def singleton_lock_pid(target, hostname):
+    """Chromium's SingletonLock is a symlink to "<hostname>-<pid>"."""
+    host, _, pid = str(target).rpartition("-")
+    return int(pid) if host == hostname and pid.isdigit() else None
+
+
+def electron_profile_owner(user_data_dir):
+    """Linux: (pid, executable or None) of the live process holding Chromium's single-instance lock on
+    this Electron profile, whatever started it (a build, the old .deb, by hand); None when nothing
+    does. Windows: None (Chromium locks the profile there without a readable owner)."""
+    if IS_WINDOWS:
+        return None
+    try:
+        target = os.readlink(Path(user_data_dir) / "SingletonLock")
+    except OSError:
+        return None
+    pid = singleton_lock_pid(target, socket.gethostname())
+    if pid is None or not os.path.exists(f"/proc/{pid}"):
+        return None  # another machine's lock on a shared folder, or left behind by a crash
+    try:
+        exe = os.readlink(f"/proc/{pid}/exe")
+        exe = exe[:-len(" (deleted)")] if exe.endswith(" (deleted)") else exe
+    except OSError:
+        exe = None
+    return pid, exe
+
+
 # ---------------------------------------------------------------- windows and notifications
 
 def minimized_startupinfo():
@@ -254,7 +282,9 @@ def linux_sandbox_state(electron):
 
 
 def apparmor_profile_text(builds_dir):
-    electron = f"{builds_dir}/*/apps/desktop/node_modules/electron/dist/electron"
+    # AppArmor matches the resolved executable, and pnpm links apps/desktop/node_modules/electron into
+    # the build's node_modules/.pnpm; builds_dir must be resolved too.
+    electron = f"{builds_dir}/*/node_modules/.pnpm/electron@*/node_modules/electron/dist/electron"
     return "\n".join([
         "# Lets T3 Code Alex's builds use Chromium's user-namespace sandbox (written by t3update.py setup).",
         "abi <abi/4.0>,",

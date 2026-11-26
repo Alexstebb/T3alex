@@ -13,6 +13,7 @@ The smoke test starts builds through app_environment()/electron_command() as wel
 update exercises the code this launcher uses.
 """
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -25,6 +26,7 @@ import t3core  # noqa: E402
 import t3platform  # noqa: E402
 
 LINUX_WM_CLASS = "com.t3tools.t3code.alex"
+APP_FOLDER = ".t3launch"
 
 
 class LaunchError(Exception):
@@ -75,10 +77,31 @@ def app_environment(config, build, meta, home, user_data, port=None, app_user_mo
     return env
 
 
+def app_manifest(config, build):
+    """Electron takes its name from the package.json it starts and, on Linux, files its safeStorage
+    key in the keyring under that name. Started on a bare script it is "Electron", so the build could
+    not read what the packaged app (appName) encrypted. This manifest gives it that name and version."""
+    desktop = build / "apps" / "desktop"
+    entry = "boot.cjs" if (desktop / "dist-electron" / "boot.cjs").is_file() else "main.cjs"
+    version = json.loads((desktop / "package.json").read_text(encoding="utf-8"))["version"]
+    return {"name": config.app_name, "version": version, "private": True, "main": f"../dist-electron/{entry}"}
+
+
+def write_app_folder(config, build):
+    if not config.app_name:
+        return
+    path = build / "apps" / "desktop" / APP_FOLDER / "package.json"
+    text = json.dumps(app_manifest(config, build), indent=2) + "\n"
+    if not path.is_file() or path.read_text(encoding="utf-8") != text:
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+
+
 def electron_command(config, build, extra_args=()):
     electron = config.electron_path(build)
     sandbox_args, _why = t3platform.linux_sandbox_state(electron)
-    return [str(electron), *sandbox_args, *config.electron_args, *extra_args, "dist-electron/main.cjs"]
+    entry = APP_FOLDER if config.app_name else "dist-electron/main.cjs"
+    return [str(electron), *sandbox_args, *config.electron_args, *extra_args, entry]
 
 
 def take_pending_backup(config):
@@ -122,6 +145,7 @@ def launch(config, check=False):
                           config.app_user_model_id, launcher_path)
     command = electron_command(config, build)
     desktop = build / "apps" / "desktop"
+    owner = t3platform.electron_profile_owner(config.user_data_dir)
     if check:
         print(f"build:        {build.name} {meta.get('subject', '')}")
         print(f"command:      {command} (cwd {desktop})")
@@ -130,6 +154,9 @@ def launch(config, check=False):
         print(f"port:         {env.get('T3CODE_PORT', 'not pinned')}")
         print(f"sandbox:      {t3platform.linux_sandbox_state(config.electron_path(build))[1]}")
         print(f"pending DB backup before start: {pointer.get('pendingDbBackup')}")
+        print(f"app on the profile now: {'pid %s, %s' % owner if owner else 'none'}")
+        if config.app_name:
+            print(f"app name:     {config.app_name} (from {desktop / APP_FOLDER / 'package.json'})")
         print("T3/VITE/ELECTRON/NODE variables passed:",
               sorted(k for k in env if k.upper().startswith(("T3CODE_", "T3_", "VITE_", "ELECTRON_", "NODE_"))))
         return 0
@@ -137,8 +164,12 @@ def launch(config, check=False):
     if not lock.try_acquire():
         return 0  # this launcher already runs the app
     try:
-        take_pending_backup(config)
-        apply_pending_settings(config, build)
+        # An app already on this profile (the .deb, or a build that relaunched itself) gets this
+        # start handed over by Electron, so its open database and settings are left alone.
+        if owner is None:
+            take_pending_backup(config)
+            apply_pending_settings(config, build)
+        write_app_folder(config, build)
         log_path = config.logs_dir / "app-last.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
