@@ -63,6 +63,33 @@ The brand is baked into the desktop bundle at pack time, so the installed app ne
 A build without `T3CODE_FORK_BRAND` behaves exactly as before. To add another brand, add an entry
 to `FORK_BRANDS` in `scripts/lib/fork-brand.ts`.
 
+## Updating
+
+Every machine runs the fork the same way: an unpacked build folder per commit, started by a small launcher, with
+no installer and no password. One command in the repo builds `origin/main`, starts it once minimized against a
+neutralised copy of the profile, and marks it for the next app start; it never stops or restarts the running app.
+
+```sh
+python3 fork/tools/t3update.py setup        # once per machine: config file, launcher, (Linux) app menu entry
+python3 fork/tools/t3update.py update       # safe to repeat and to run unattended; --check only reports
+python3 fork/tools/t3update.py status       # current, previous, running, commits not yet taken
+python3 fork/tools/t3update.py rollback     # previous build at the next start (--restore-db for migrations)
+python3 fork/tools/t3update.py prune        # delete builds that are not current, previous or running
+```
+
+On Windows use `python` instead of `python3`. The per-machine settings (profile, port, brand, source checkout) live
+in `t3update.json` outside the repo; on Windows the defaults are the existing setup under
+`%LOCALAPPDATA%\T3CodeFork`. Builds get the public T3 Connect ids from `.env.example` when the source checkout has
+no `.env` of its own. Details and the safety rules: [fork/tools/README.md](fork/tools/README.md).
+
+**Linux, moving from the .deb:** `git pull` in `~/src/t3code-alex`, run `setup` and then `update`, start "T3 Code
+Alex" from the app menu, and once it works remove the package with `sudo apt remove t3code-alex`. The profile
+(`~/.t3-alex`) and Electron data (`~/.config/t3code-alex`) are the ones the .deb used. `setup` also prints two
+optional one-time `sudo` steps: an AppArmor profile that lets the builds keep Chromium's sandbox, and `xvfb` so the
+smoke test runs on an invisible display.
+
+The sections below build installers by hand; the updater does not need them.
+
 ## Build and run (Windows)
 
 > **Not yet run end to end.** The command below is what the code supports. An earlier partial run of the same
@@ -99,7 +126,7 @@ Settings → Apps.
 
 Does not work in a branded build:
 
-- Automatic updates (by design). To update, rebuild from a newer commit and install over it.
+- Automatic updates (by design). To update, use the updater (see [Updating](#updating)) or rebuild and install over it.
 - `t3code://` callbacks, i.e. account sign-in that returns to the app through the browser.
 - The process resource monitor (CPU/memory per process) when built with `T3CODE_DESKTOP_SKIP_RESOURCE_MONITOR`;
   the app runs without those metrics.
@@ -129,7 +156,8 @@ T3CODE_FORK_BRAND=alex vp run dist:desktop:linux
 - **AppImage** (any distribution): `chmod +x` it and run it. The first launch writes its own desktop entry
   and icon under `~/.local/share`.
 
-The same limits as on Windows apply: no automatic updates and no `t3code://` sign-in callbacks.
+The same limits as on Windows apply: no automatic updates and no `t3code://` sign-in callbacks. For daily use the
+updater replaces both packages (see [Updating](#updating)).
 
 ## Getting upstream updates
 
