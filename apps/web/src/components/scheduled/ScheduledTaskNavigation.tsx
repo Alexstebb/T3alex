@@ -42,12 +42,9 @@ import {
   type SectionLampEntry,
 } from "../sidebar/SidebarSectionLamp";
 import {
-  countSectionLampTones,
   isReadClearableTone,
-  resolveSectionLamp,
   resumableLimitedThreads,
   resumeAtResetTarget,
-  type SectionLamp,
   type SectionLampTone,
 } from "../sidebar/sidebarSectionLamp.logic";
 import { useMarkThreadsRead } from "../sidebar/useMarkThreadsRead";
@@ -154,13 +151,54 @@ export function useScheduledHeaderLamp(
   rows: readonly ScheduledTaskNavigationRow[],
   enabled: boolean,
 ) {
-  const router = useRouter();
   const [organization, setOrganization] = useScheduledTaskOrganization();
   const nowMinute = useNowMinute();
   const chatStates = useScheduledChatStates(rows);
+  const lampOf = useScheduledLampBuilder(organization, setOrganization, nowMinute, chatStates);
+  return enabled ? lampOf(rows) : null;
+}
+
+type ScheduledChatStates = ReturnType<typeof useScheduledChatStates>;
+
+/** Builds the lamp and popover for any subset of tasks, the header's and each inner heading's. */
+function useScheduledLampBuilder(
+  organization: ScheduledTaskOrganization,
+  setOrganization: (
+    update: (current: ScheduledTaskOrganization) => ScheduledTaskOrganization,
+  ) => void,
+  nowMinute: string,
+  chatStates: ScheduledChatStates,
+) {
+  const router = useRouter();
   const markThreadsRead = useMarkThreadsRead();
   const resumeAtReset = useResumeAtReset();
-  if (!enabled) return null;
+  return (rows: readonly ScheduledTaskNavigationRow[]) =>
+    buildScheduledLamp({
+      rows,
+      organization,
+      setOrganization,
+      nowMinute,
+      chatStates,
+      router,
+      markThreadsRead,
+      resumeAtReset,
+    });
+}
+
+function buildScheduledLamp(input: {
+  readonly rows: readonly ScheduledTaskNavigationRow[];
+  readonly organization: ScheduledTaskOrganization;
+  readonly setOrganization: (
+    update: (current: ScheduledTaskOrganization) => ScheduledTaskOrganization,
+  ) => void;
+  readonly nowMinute: string;
+  readonly chatStates: ScheduledChatStates;
+  readonly router: ReturnType<typeof useRouter>;
+  readonly markThreadsRead: ReturnType<typeof useMarkThreadsRead>;
+  readonly resumeAtReset: ReturnType<typeof useResumeAtReset>;
+}) {
+  const { rows, organization, setOrganization, nowMinute, chatStates, router } = input;
+  const { markThreadsRead, resumeAtReset } = input;
   const chatToneOf = (key: string) => chatStates.get(key)?.tone ?? null;
   const lamp = scheduledSidebarLamp(rows, organization, Date.parse(nowMinute), chatToneOf);
   if (lamp === null) return null;
@@ -296,14 +334,9 @@ export function ScheduledTaskNavigation(props: {
     closeNameDialog();
   };
 
+  const buildLamp = useScheduledLampBuilder(organization, setOrganization, nowMinute, chatStates);
   const lampOf = (entries: readonly { key: string; row: ScheduledTaskNavigationRow }[]) =>
-    resolveSectionLamp(
-      countSectionLampTones(
-        entries.map(({ key, row }) =>
-          scheduledTaskLampTone(organization, key, row.task, chatStates.get(key)?.tone ?? null),
-        ),
-      ),
-    );
+    buildLamp(entries.map(({ row }) => row));
 
   const groupProps = (
     id: ScheduledTaskGroupId,
@@ -435,10 +468,25 @@ export function ScheduledTaskNavigation(props: {
   );
 }
 
+type ScheduledLamp = NonNullable<ReturnType<typeof buildScheduledLamp>>;
+
+function ScheduledInnerLamp(props: { readonly lamp: ScheduledLamp }) {
+  return (
+    <span className="mr-1 flex shrink-0">
+      <SidebarSectionLamp
+        lamp={props.lamp.lamp}
+        entries={props.lamp.entries}
+        onMarkAllRead={props.lamp.onMarkAllRead}
+        onResumeAll={props.lamp.onResumeAll}
+      />
+    </span>
+  );
+}
+
 function ScheduledNavigationGroup(props: {
   readonly title: string;
   readonly icon: React.ReactNode;
-  readonly lamp: SectionLamp | null;
+  readonly lamp: ScheduledLamp | null;
   readonly collapsed: boolean;
   readonly onToggle: () => void;
   readonly children: React.ReactNode;
@@ -446,19 +494,26 @@ function ScheduledNavigationGroup(props: {
   const contentId = useId();
   return (
     <section className="mb-3">
-      <h2>
+      <h2 className="flex items-center rounded-md hover:bg-sidebar-row-hover">
         <button
           type="button"
           aria-expanded={!props.collapsed}
           aria-controls={contentId}
           onClick={props.onToggle}
-          className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>svg]:size-3.5"
+          className="flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs font-medium text-sidebar-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&>svg]:size-3.5"
         >
           {props.icon}
           <span className="min-w-0 flex-1 truncate">{props.title}</span>
-          {props.collapsed && props.lamp ? <SidebarSectionLamp lamp={props.lamp} /> : null}
+        </button>
+        {props.collapsed && props.lamp ? <ScheduledInnerLamp lamp={props.lamp} /> : null}
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden
+          onClick={props.onToggle}
+          className="flex h-7 shrink-0 cursor-pointer items-center rounded-md pr-2 pl-2 text-sidebar-muted-foreground outline-none [&>svg]:size-3.5"
+        >
           <ChevronDownIcon
-            aria-hidden
             className={cn("transition-transform", props.collapsed && "-rotate-90")}
           />
         </button>
@@ -472,7 +527,7 @@ function ScheduledNavigationGroup(props: {
 
 function ScheduledSubsection(props: {
   readonly section: ScheduledTaskSection;
-  readonly lamp: SectionLamp | null;
+  readonly lamp: ScheduledLamp | null;
   readonly onToggle: () => void;
   readonly onRename: () => void;
   readonly onRemove: () => void;
@@ -496,8 +551,8 @@ function ScheduledSubsection(props: {
             )}
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{props.section.name}</span>
-          {props.section.collapsed && props.lamp ? <SidebarSectionLamp lamp={props.lamp} /> : null}
         </button>
+        {props.section.collapsed && props.lamp ? <ScheduledInnerLamp lamp={props.lamp} /> : null}
         <Menu>
           <MenuTrigger
             render={

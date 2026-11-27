@@ -797,9 +797,9 @@ describe("Scheduled unread results", () => {
     expect(headerRow(header).querySelector(lamp)).toBeNull();
 
     const allTasks = screen.getByRole("button", { name: /^All tasks/ });
-    expect(allTasks.element().querySelector(lamp)).toBeNull();
+    expect(headerRow(allTasks).querySelector(lamp)).toBeNull();
     await userEvent.click(allTasks);
-    await vi.waitFor(() => expect(allTasks.element().querySelector(lamp)).not.toBeNull());
+    await vi.waitFor(() => expect(headerRow(allTasks).querySelector(lamp)).not.toBeNull());
     await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
     await expect.element(header).toBeVisible();
     expect(headerRow(header).querySelector(lamp)).not.toBeNull();
@@ -820,6 +820,59 @@ describe("Scheduled unread results", () => {
     await userEvent.click(page.getByRole("button", { name: "Mark all as read" }));
     await vi.waitFor(() =>
       expect(headerRow(header).querySelector("[data-section-lamp]")).toBeNull(),
+    );
+  });
+
+  it("lists only a collapsed heading's own tasks behind its lamp without opening the heading", async () => {
+    using _storage = isolateLocalStorage(SCHEDULED_SIDEBAR_COLLAPSED_KEY);
+    const other: ScheduledTask = {
+      ...task,
+      id: ScheduledTaskId.make("weekly-report"),
+      title: "Weekly report",
+    };
+    const otherKey = scheduledTaskOrganizationKey(environmentId, other.id);
+    using _organization = withOrganization({
+      lastSeenAt: {},
+      collapsedGroups: ["all"],
+      sections: [{ id: "mine", name: "Mine", collapsed: true, taskKeys: [otherKey] }],
+    });
+    using fixture = createFixture();
+    fixture.registry.set(tasksAtom, [task, other]);
+    await using screen = await renderWorkspace(fixture);
+    await userEvent.click(screen.getByRole("button", { name: SCHEDULED_HEADER }));
+    const group = screen.getByRole("button", { name: /^All tasks/ });
+    const lamp = headerRow(group).querySelector("button[data-section-lamp]") as HTMLElement;
+    expect(lamp).not.toBeNull();
+    lamp.click();
+    await expect
+      .element(page.getByRole("button", { name: "Daily briefing", exact: true }))
+      .toBeVisible();
+    expect(page.getByRole("button", { name: "Weekly report", exact: true }).elements()).toEqual([]);
+    expect(group.element().getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(page.getByRole("button", { name: "Mark all as read" }));
+    await vi.waitFor(() =>
+      expect(headerRow(group).querySelector("[data-section-lamp]")).toBeNull(),
+    );
+    expect(group.element().getAttribute("aria-expanded")).toBe("false");
+
+    const subsection = screen.getByRole("button", { name: /^Mine/ });
+    const subsectionLamp = headerRow(subsection).querySelector(
+      "button[data-section-lamp]",
+    ) as HTMLElement;
+    subsectionLamp.click();
+    await expect
+      .element(page.getByRole("button", { name: "Weekly report", exact: true }))
+      .toBeVisible();
+    expect(page.getByRole("button", { name: "Daily briefing", exact: true }).elements()).toEqual(
+      [],
+    );
+    expect(subsection.element().getAttribute("aria-expanded")).toBe("false");
+    if (import.meta.env.VITE_LAMP_SCREENSHOT) {
+      await page.screenshot({ path: "inner-lamp.png" });
+    }
+    await userEvent.click(page.getByRole("button", { name: "Mark all as read" }));
+    await vi.waitFor(() =>
+      expect(headerRow(subsection).querySelector("[data-section-lamp]")).toBeNull(),
     );
   });
 });
