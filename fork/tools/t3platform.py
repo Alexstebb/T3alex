@@ -226,6 +226,74 @@ def notify(title, text):
     print(f"{title}: {text}", file=sys.stderr)
 
 
+# ---------------------------------------------------------------- automatic updates
+
+AUTO_UPDATE_TASK = "T3 Code Alex auto-update"
+AUTO_UPDATE_UNIT = "t3code-alex-update"
+
+
+def _systemd_arg(arg):
+    return '"' + str(arg).replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
+
+
+def render_auto_update_units(command, minutes):
+    """Linux: a systemd user service that runs `command` once, and a timer that repeats it."""
+    service = ("[Unit]\nDescription=T3 Code Alex automatic update\n\n"
+               f"[Service]\nType=oneshot\nNice=10\nExecStart={' '.join(_systemd_arg(a) for a in command)}\n")
+    timer = ("[Unit]\nDescription=Check for T3 Code Alex updates\n\n"
+             f"[Timer]\nOnBootSec=5min\nOnUnitActiveSec={minutes}min\n\n[Install]\nWantedBy=timers.target\n")
+    return service, timer
+
+
+def _systemd_user_dir():
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd" / "user"
+
+
+def _run_quiet(command):
+    return subprocess.run(command, capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          creationflags=NO_WINDOW)
+
+
+def schedule_auto_update(command, minutes):
+    """Run `command` every `minutes` while the user is logged in. Raises RuntimeError on failure."""
+    if IS_WINDOWS:
+        # Without /RU the task runs as this user, only while logged in, so the smoke test has a desktop.
+        result = _run_quiet(["schtasks", "/Create", "/F", "/TN", AUTO_UPDATE_TASK, "/SC", "MINUTE",
+                             "/MO", str(minutes), "/TR", subprocess.list2cmdline(command)])
+    else:
+        unit_dir = _systemd_user_dir()
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        service, timer = render_auto_update_units(command, minutes)
+        (unit_dir / f"{AUTO_UPDATE_UNIT}.service").write_text(service, encoding="utf-8", newline="\n")
+        (unit_dir / f"{AUTO_UPDATE_UNIT}.timer").write_text(timer, encoding="utf-8", newline="\n")
+        _run_quiet(["systemctl", "--user", "daemon-reload"])
+        result = _run_quiet(["systemctl", "--user", "enable", "--now", f"{AUTO_UPDATE_UNIT}.timer"])
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout).strip() or "could not schedule the update")
+
+
+def unschedule_auto_update():
+    if IS_WINDOWS:
+        if auto_update_scheduled():
+            result = _run_quiet(["schtasks", "/Delete", "/F", "/TN", AUTO_UPDATE_TASK])
+            if result.returncode != 0:
+                raise RuntimeError((result.stderr or result.stdout).strip())
+        return
+    _run_quiet(["systemctl", "--user", "disable", "--now", f"{AUTO_UPDATE_UNIT}.timer"])
+    for suffix in (".service", ".timer"):
+        (_systemd_user_dir() / f"{AUTO_UPDATE_UNIT}{suffix}").unlink(missing_ok=True)
+    _run_quiet(["systemctl", "--user", "daemon-reload"])
+
+
+def auto_update_scheduled():
+    try:
+        if IS_WINDOWS:
+            return _run_quiet(["schtasks", "/Query", "/TN", AUTO_UPDATE_TASK]).returncode == 0
+        return _run_quiet(["systemctl", "--user", "is-enabled", f"{AUTO_UPDATE_UNIT}.timer"]).returncode == 0
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------- Windows t3code:// handler
 
 PROTOCOL_KEY = r"Software\Classes\t3code\shell\open\command"

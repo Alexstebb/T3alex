@@ -8,6 +8,7 @@ outside the repo (see `config`).
     python3 fork/tools/t3update.py rollback [--restore-db FILE]
     python3 fork/tools/t3update.py prune [--dry-run]
     python3 fork/tools/t3update.py setup [--dry-run] [--source-repo DIR]
+    python3 fork/tools/t3update.py auto on|off|status
     python3 fork/tools/t3update.py config [--defaults]
 
 Every command takes --config FILE (default: %LOCALAPPDATA%\\T3CodeFork\\t3update.json on Windows,
@@ -43,6 +44,8 @@ MIN_FREE_BYTES = 8 * 1024 ** 3
 REACT_DEV_MARKER = b"Each child in a list should have a unique"
 REACT_PROD_MARKER = b"react.dev/errors/"
 SUBJECTS_SHOWN = 25
+AUTO_UPDATE_MINUTES = 10
+AUTO_LOG_MAX_BYTES = 1024 ** 2
 
 
 class UpdateError(Exception):
@@ -444,6 +447,7 @@ def cmd_status(config, args):
     last = last_record(config)
     if last:
         log(f"last update run: {last}")
+    log(f"automatic updates: {'on' if t3platform.auto_update_scheduled() else 'off (`auto on` turns them on)'}")
     return EXIT_OK
 
 
@@ -531,6 +535,100 @@ def _update(config, args):
         log("T3 Code is running and was left alone: quit and start it when it suits you.")
     record(config, "updated", f"{current} -> {name}")
     return EXIT_OK
+
+
+def auto_state_path(config):
+    return config.logs_dir / "auto-update.json"
+
+
+def auto_skip_reason(pointer, state, name):
+    """Why the automatic run leaves `name` alone, or None to build it. A build that failed is not
+    retried every few minutes; the next push gets a fresh try."""
+    if pointer.get("current") == name:
+        return "up to date"
+    if name in (pointer.get("rejected") or []):
+        return "rolled back from"
+    if state.get("failedBuild") == name:
+        return "failed before"
+    return None
+
+
+def auto_run_command(config):
+    script = str(Path(__file__).resolve())
+    python = Path(sys.executable)
+    if config.is_windows:
+        python = python.with_name("pythonw.exe")
+    return [str(python), script, "--config", str(config.path), "auto-run"]
+
+
+def cmd_auto(config, args):
+    if args.action == "on":
+        require_config(config)
+        require_source_repo(config)
+        t3platform.schedule_auto_update(auto_run_command(config), AUTO_UPDATE_MINUTES)
+        log(f"Automatic updates are on: every {AUTO_UPDATE_MINUTES} minutes while you are logged in, a new")
+        log(f"{config.upstream_ref} is built and tested in the background and used the next time T3 Code starts.")
+        log(f"Log: {config.logs_dir / 'auto-update.log'}")
+        if not config.is_windows and not shutil.which("Xvfb"):
+            log("Install Xvfb (`sudo apt install xvfb`): without a display the smoke test fails outside the desktop.")
+    elif args.action == "off":
+        t3platform.unschedule_auto_update()
+        log("Automatic updates are off. `update` still works by hand.")
+    else:
+        log(f"automatic updates: {'on' if t3platform.auto_update_scheduled() else 'off'}")
+    return EXIT_OK
+
+
+def rerun_with_hidden_console(config):
+    # pythonw has no console, so every git, node and cmd it starts would open a window of its own.
+    # A python.exe started without a window gives them one hidden console to share.
+    config.logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = config.logs_dir / "auto-update.log"
+    if log_path.is_file() and log_path.stat().st_size > AUTO_LOG_MAX_BYTES:
+        log_path.write_bytes(log_path.read_bytes()[-AUTO_LOG_MAX_BYTES // 2:])
+    python = Path(sys.executable).with_name("python.exe")
+    with open(log_path, "a", encoding="utf-8", newline="\n") as out:
+        return subprocess.run([str(python), str(Path(__file__).resolve()), "--config", str(config.path), "auto-run"],
+                              stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                              # Children inherit below-normal priority, so a build gives way to the user's work.
+                              creationflags=t3platform.NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS).returncode
+
+
+def cmd_auto_run(config, args):
+    if config.is_windows and sys.stdout is None:
+        return rerun_with_hidden_console(config)
+    require_config(config)
+    require_source_repo(config)
+    lock = t3platform.FileLock(config.release_dir / "update.lock")
+    if not lock.try_acquire():
+        return EXIT_NOTHING
+    failure = None
+    try:
+        git(config, "fetch", "--quiet", config.remote)
+        name = t3core.build_name(git(config, "rev-parse", "--verify", f"{config.upstream_ref}^{{commit}}"))
+        state_path = auto_state_path(config)
+        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.is_file() else {}
+        if auto_skip_reason(t3core.read_pointer(config.pointer_path), state, name):
+            return EXIT_NOTHING
+        log(f"==== {t3core.now_stamp()} automatic update to {name}")
+        try:
+            result = _update(config, argparse.Namespace(check=False, ref=None, allow_rejected=False))
+        except (UpdateError, t3launch.LaunchError, RuntimeError, OSError, ValueError) as error:
+            failure = str(error).splitlines()[0][:300] if str(error) else type(error).__name__
+            log(f"FAILED: {failure}")
+            record(config, "failed", f"automatic: {failure}")
+            t3core.write_json_atomic(state_path, {"failedBuild": name, "at": t3core.now_stamp(), "error": failure})
+            return EXIT_FAILED
+        state_path.unlink(missing_ok=True)
+        if result == EXIT_OK:
+            cmd_prune(config, argparse.Namespace(dry_run=False))
+        return result
+    finally:
+        lock.release()
+        if failure:
+            t3platform.notify("T3 Code Alex: automatic update failed",
+                              f"{failure}\n\nThe current version stays in place. The next push is tried again.\n"
+                              f"Log: {config.logs_dir / 'auto-update.log'}")
 
 
 def cmd_rollback(config, args):
@@ -738,6 +836,11 @@ def main(argv=None):
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--source-repo", help="the checkout builds are made from")
     p.set_defaults(func=cmd_setup)
+    p = sub.add_parser("auto", help="turn automatic background updates on or off")
+    p.add_argument("action", choices=("on", "off", "status"))
+    p.set_defaults(func=cmd_auto)
+    p = sub.add_parser("auto-run", help="what the automatic update runs: update when origin/main moved")
+    p.set_defaults(func=cmd_auto_run)
     args = parser.parse_args(argv)
     try:
         config = t3core.load_config(args.config)

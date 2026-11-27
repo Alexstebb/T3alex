@@ -12,7 +12,13 @@ python3 fork/tools/t3update.py rollback [--restore-db FILE]   # the last build t
 python3 fork/tools/t3update.py prune [--dry-run]
 python3 fork/tools/t3update.py setup [--dry-run]  # once per machine
 python3 fork/tools/t3update.py config             # the resolved per-machine paths
+python3 fork/tools/t3update.py auto on|off|status # background updates every 10 minutes
 ```
+
+`auto-run` is what the schedule starts. On Windows it starts from `pythonw` and runs itself again as
+a windowless `python.exe` at below-normal priority, because every console child of `pythonw` (git,
+node, cmd) would otherwise open a window. It skips the current build, a build rolled back from and
+one that failed before (`release/logs/auto-update.json`), and holds the same `update.lock`.
 
 Exit codes: `0` done (with `--check`: an update is available), `3` nothing to do, `1` failed. A
 failed update leaves the current build in place and says what failed; `release/logs/update-history.log`

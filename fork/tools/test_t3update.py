@@ -558,5 +558,20 @@ class Locks(TempDir):
         self.assertEqual(t3platform.descendants(table, 10), [10, 11, 12, 13])
 
 
+class AutoUpdate(unittest.TestCase):
+    def test_skips_the_current_a_rejected_and_a_failed_build_only(self):
+        pointer = {"current": "b1", "rejected": ["b2"]}
+        self.assertEqual(t3update.auto_skip_reason(pointer, {}, "b1"), "up to date")
+        self.assertEqual(t3update.auto_skip_reason(pointer, {}, "b2"), "rolled back from")
+        self.assertEqual(t3update.auto_skip_reason(pointer, {"failedBuild": "b3"}, "b3"), "failed before")
+        self.assertIsNone(t3update.auto_skip_reason(pointer, {"failedBuild": "b3"}, "b4"))
+
+    def test_systemd_units_quote_the_command_and_repeat_it(self):
+        service, timer = t3platform.render_auto_update_units(["/usr/bin/python3", "/a b/t3update.py", "100%"], 10)
+        self.assertIn('ExecStart="/usr/bin/python3" "/a b/t3update.py" "100%%"', service)
+        self.assertIn("OnUnitActiveSec=10min", timer)
+        self.assertIn("WantedBy=timers.target", timer)
+
+
 if __name__ == "__main__":
     unittest.main()

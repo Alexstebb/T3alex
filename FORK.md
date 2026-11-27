@@ -75,7 +75,13 @@ python3 fork/tools/t3update.py update       # safe to repeat and to run unattend
 python3 fork/tools/t3update.py status       # current, rollback target (and why), running, commits not yet taken
 python3 fork/tools/t3update.py rollback     # last build that actually ran, at the next start (--restore-db for migrations)
 python3 fork/tools/t3update.py prune        # delete builds that are not current, the rollback target or running
+python3 fork/tools/t3update.py auto on      # update by itself in the background (auto off / auto status)
 ```
+
+`auto on` runs `auto-run` every 10 minutes while the user is logged in (Windows Task Scheduler, a systemd user timer on
+Linux). It does nothing until `origin/main` moves; then it runs `update` and `prune`, so closing and opening the app
+is enough. A build that failed is not retried until the next push, and failing shows one notification. Output goes to
+`release/logs/auto-update.log` on Windows and the user journal on Linux.
 
 On Windows use `python` instead of `python3`. The per-machine settings (profile, port, brand, source checkout) live
 in `t3update.json` outside the repo; on Windows the defaults are the existing setup under
