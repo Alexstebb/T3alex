@@ -178,8 +178,8 @@ stopped on a usage limit has **Resume at reset** beside it (or **Resume now** on
 reset), and **Resume all at reset** covers every such chat in the list. A chat set to resume
 no longer lights the section. Use the section's menu to rename, reorder, or remove it.
 
-An open section lists chats that need you first (after pinned chats), then the rest in their
-usual order. It shows ten chats; **Show more** reveals the rest and **Show less** folds them
+An open section lists chats that need you first (after pinned chats), then the rest with the
+most recent activity on top. It shows ten chats; **Show more** reveals the rest and **Show less** folds them
 again. The open chat and chats that need you always stay visible.
 Removing a section returns its threads to their usual places. Sections are saved in your browser
 or desktop profile.

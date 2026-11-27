@@ -25,7 +25,7 @@ export interface SectionArrangementInput<T> {
 
 /**
  * The open section's rows: pinned chats first (as pins lead everywhere else), then the
- * chats that need the user in the lamp's order, then the rest in their stored order.
+ * chats that need the user in the lamp's order, then the rest in the order given.
  * Past the limit, pinned rows, rows that need the user and the open chat still show.
  */
 export function arrangeSectionThreads<T>(input: SectionArrangementInput<T>) {
@@ -41,7 +41,7 @@ export function arrangeSectionThreads<T>(input: SectionArrangementInput<T>) {
     if (rank === undefined) rest.push(thread);
     else needing.push({ thread, rank });
   }
-  // Array.prototype.sort is stable, so equal ranks keep their stored order.
+  // Array.prototype.sort is stable, so equal ranks keep the order given.
   needing.sort((a, b) => a.rank - b.rank);
   const ordered = [...pinned, ...needing.map(({ thread }) => thread), ...rest];
   const keep = new Set<T>([...pinned, ...needing.map(({ thread }) => thread)]);

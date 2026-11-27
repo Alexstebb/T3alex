@@ -231,6 +231,21 @@ describe("splitCustomSidebarSections with scheduled runs and a long section", ()
     expect(open.customSectionThreads.groups[0]!.foldedCount).toBe(2);
   });
 
+  it("lists pinned chats first, then the rest newest activity first", () => {
+    const at = (minute: number) => ({
+      latestUserMessageAt: `2026-11-27T10:${String(minute).padStart(2, "0")}:00.000Z`,
+      latestRun: null,
+    });
+    const threads = [
+      chat("old", at(1)),
+      chat("pin", { ...at(0), pinnedAt: "2026-11-26T09:00:00.000Z" }),
+      chat("newest", at(30)),
+      chat("middle", at(10)),
+    ];
+    const result = split(linked({ threadKeys: [key("old"), key("middle")] }), threads, []);
+    expect(ids(result)).toEqual(["pin", "newest", "middle", "old"]);
+  });
+
   it("puts a chat that needs the user on top, even from past the limit", () => {
     const threads = [
       ...Array.from({ length: 14 }, (_, i) => chat(`own${i}`)),

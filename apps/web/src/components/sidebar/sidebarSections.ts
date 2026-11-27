@@ -2,6 +2,10 @@ import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
+  resolveThreadActivityTimestamp,
+  toSortableTimestamp,
+} from "@t3tools/client-runtime/state/thread-sort";
+import {
   parseScopedProjectKey,
   parseScopedThreadKey,
   scopeProjectRef,
@@ -36,7 +40,7 @@ import { readProject } from "../../state/entities";
 import { environmentThreadShells, threadFamilies } from "../../state/threads";
 import { useUiStateStore } from "../../uiStateStore";
 import { useScheduledListedRunThreadKeys } from "../scheduled/useScheduledRunThreads";
-import { orderItemsByPreferredIds, type SidebarSection } from "../Sidebar.logic";
+import type { SidebarSection } from "../Sidebar.logic";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   arrangeSectionThreads,
@@ -401,6 +405,23 @@ function threadShellKey(thread: Pick<EnvironmentThreadShell, "environmentId" | "
   return scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
 }
 
+/**
+ * A section lists pinned chats in their pin order, then the rest newest activity first:
+ * the same time the row shows, so the labels read top to bottom.
+ */
+function orderSectionThreads(threads: readonly EnvironmentThreadShell[]) {
+  const activity = (thread: EnvironmentThreadShell) =>
+    toSortableTimestamp(resolveThreadActivityTimestamp(thread) ?? undefined) ??
+    Number.NEGATIVE_INFINITY;
+  const pinned = threads.filter((thread) => thread.pinnedAt != null);
+  const rest = threads
+    .filter((thread) => thread.pinnedAt == null)
+    .map((thread) => ({ thread, at: activity(thread) }))
+    .sort((left, right) => right.at - left.at)
+    .map(({ thread }) => thread);
+  return [...pinned, ...rest];
+}
+
 function routeThreadOnly(
   threads: readonly EnvironmentThreadShell[],
   routeThreadKey: string | null,
@@ -451,20 +472,18 @@ export function splitCustomSidebarSections(
   const groups = sectionIndex.sections.map((section) => {
     // Runs of scheduled tasks stay under Scheduled; they keep their section only so they
     // do not fall back into the project's shelf.
-    const threads = orderItemsByPreferredIds({
-      items: sectionThreads.get(section.id) ?? NO_THREADS,
-      preferredIds: section.threadKeys,
-      getId: threadShellKey,
-    }).filter((thread) => {
-      const threadKey = threadShellKey(thread);
-      return !hidesScheduledRun({
-        threadKey,
-        scheduledRunThreadKeys: display.scheduledRunThreadKeys,
-        placedByHand: sectionIndex.placedByHand(threadKey),
-        pinned: thread.pinnedAt != null,
-        routeThreadKey: routeRowThreadKey,
-      });
-    });
+    const threads = orderSectionThreads(sectionThreads.get(section.id) ?? NO_THREADS).filter(
+      (thread) => {
+        const threadKey = threadShellKey(thread);
+        return !hidesScheduledRun({
+          threadKey,
+          scheduledRunThreadKeys: display.scheduledRunThreadKeys,
+          placedByHand: sectionIndex.placedByHand(threadKey),
+          pinned: thread.pinnedAt != null,
+          routeThreadKey: routeRowThreadKey,
+        });
+      },
+    );
     if (section.collapsed) {
       const shown = routeThreadOnly(threads, routeRowThreadKey);
       /** The closed section's rows its header lamp speaks for: all but the open chat's row. */
